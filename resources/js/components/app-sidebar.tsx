@@ -62,7 +62,7 @@ function tenantNavByRole(role: string): NavItem[] {
             { title: 'Finanzas', href: transactionsIndex().url, icon: DollarSign },
             { title: 'Asistencia', href: attendanceIndex().url, icon: UserCheck },
             { title: 'Reportes', href: reportsIndex().url, icon: BarChart3 },
-            { title: 'n8n', href: '/reports/n8n', icon: Workflow },
+            // { title: 'n8n', href: '/reports/n8n', icon: Workflow },
         ];
     }
 
