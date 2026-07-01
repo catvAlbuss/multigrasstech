@@ -1,3 +1,9 @@
 export type * from './auth';
+export type * from './admin';
+export type * from './dashboard';
+export type * from './caja';
 export type * from './navigation';
+export type * from './pagination';
+export type * from './tenant';
 export type * from './ui';
+export type * from './welcome';

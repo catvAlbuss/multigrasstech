@@ -1,4 +1,5 @@
 import { createInertiaApp } from '@inertiajs/react';
+import 'sweetalert2/dist/sweetalert2.min.css';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
@@ -13,6 +14,7 @@ createInertiaApp({
     layout: (name) => {
         switch (true) {
             case name === 'welcome':
+            case name === 'tenant/welcome':
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;

@@ -12,7 +12,9 @@ class DashboardTest extends TestCase
 
     public function test_guests_are_redirected_to_the_login_page()
     {
-        $response = $this->get(route('dashboard'));
+        // No central route is named "dashboard" — it only exists as "tenant.dashboard".
+        // Fortify's config('fortify.home') still points at the literal '/dashboard' path.
+        $response = $this->get('/dashboard');
         $response->assertRedirect(route('login'));
     }
 
@@ -21,7 +23,7 @@ class DashboardTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user);
 
-        $response = $this->get(route('dashboard'));
+        $response = $this->get('/dashboard');
         $response->assertOk();
     }
 }

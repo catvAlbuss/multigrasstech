@@ -35,4 +35,14 @@ return [
         ],
     ],
 
+    'peru_documents' => [
+        'url' => env('PERU_DOCUMENTS_API_URL', 'https://api.json.pe/api'),
+        'token' => env('PERU_DOCUMENTS_API_TOKEN'),
+    ],
+
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', 'gpt-4.1-mini'),
+    ],
+
 ];

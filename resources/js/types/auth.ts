@@ -1,12 +1,11 @@
 export type User = {
     id: number;
+    tenant_id: number | null;
     name: string;
     email: string;
     avatar?: string;
     email_verified_at: string | null;
-    /* @chisel-2fa */
     two_factor_enabled?: boolean;
-    /* @end-chisel-2fa */
     created_at: string;
     updated_at: string;
     [key: string]: unknown;
@@ -14,7 +13,15 @@ export type User = {
 
 export type Auth = {
     user: User;
+    roles: string[];
 };
+
+export type TenantShared = {
+    id: number;
+    name: string;
+    slug: string;
+    plan: string;
+} | null;
 
 /* @chisel-passkeys */
 export type Passkey = {
@@ -26,7 +33,6 @@ export type Passkey = {
 };
 /* @end-chisel-passkeys */
 
-/* @chisel-2fa */
 export type TwoFactorSetupData = {
     svg: string;
     url: string;
@@ -35,4 +41,3 @@ export type TwoFactorSetupData = {
 export type TwoFactorSecretKey = {
     secretKey: string;
 };
-/* @end-chisel-2fa */

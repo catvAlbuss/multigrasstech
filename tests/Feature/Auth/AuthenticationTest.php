@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Http\Middleware\EnsureTenantIsActive;
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\RateLimiter;
@@ -29,7 +31,7 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect(route('dashboard', absolute: false));
+        $response->assertRedirect(route('admin.dashboard', absolute: false));
     }
 
     public function test_users_with_two_factor_enabled_are_redirected_to_two_factor_challenge()
@@ -63,6 +65,27 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->assertGuest();
+    }
+
+    public function test_users_from_an_inactive_tenant_can_not_authenticate()
+    {
+        $tenant = Tenant::create([
+            'name' => 'Empresa inactiva',
+            'slug' => 'empresa-inactiva',
+            'plan' => 'basic',
+            'is_active' => false,
+        ]);
+        $user = User::factory()->create(['tenant_id' => $tenant->id]);
+
+        $response = $this->post(route('login.store'), [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $this->assertGuest();
+        $response->assertSessionHasErrors([
+            'email' => EnsureTenantIsActive::MESSAGE,
+        ]);
     }
 
     public function test_users_can_logout()

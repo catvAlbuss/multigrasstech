@@ -40,8 +40,21 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                // Lazy: evaluated after SetPermissionsTeamId middleware sets the team context
+                'roles' => fn () => $request->user()?->getRoleNames() ?? [],
             ],
+            // Lazy: tenant data when on a tenant subdomain, null on central domain
+            'tenant' => fn () => tenancy()->initialized ? [
+                'id' => tenant('id'),
+                'name' => tenant()->name,
+                'slug' => tenant()->slug,
+                'plan' => tenant()->plan,
+            ] : null,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
+            ],
         ];
     }
 }
