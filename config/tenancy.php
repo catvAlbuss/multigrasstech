@@ -25,6 +25,8 @@ return [
         '127.0.0.1',
         'localhost',
         'multigrass.test',
+        'construyehco.es',
+        'www.construyehco.es',
     ],
 
     /**
