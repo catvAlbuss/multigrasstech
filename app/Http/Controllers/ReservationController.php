@@ -67,7 +67,7 @@ class ReservationController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $this->ensureNoOverlap($data['field_id'], $data['date'], $data['start_time'], $data['end_time']);
+        $this->ensureNoOverlap((int) $data['field_id'], $data['date'], $data['start_time'], $data['end_time']);
 
         Reservation::create($data);
 
@@ -383,7 +383,7 @@ class ReservationController extends Controller
         ]);
 
         if (in_array($data['status'], ['pending', 'confirmed'])) {
-            $this->ensureNoOverlap($data['field_id'], $data['date'], $data['start_time'], $data['end_time'], $reservation->id);
+            $this->ensureNoOverlap((int) $data['field_id'], $data['date'], $data['start_time'], $data['end_time'], $reservation->id);
         }
 
         $reservation->update($data);
