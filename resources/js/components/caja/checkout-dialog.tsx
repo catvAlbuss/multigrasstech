@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
     AlertCircle,
     BadgeCheck,
@@ -76,6 +75,38 @@ const STEPS: { key: Step; label: string }[] = [
     { key: 'cliente', label: 'Cliente' },
     { key: 'cobro', label: 'Cobro' },
 ];
+
+function csrfToken() {
+    return (
+        document
+            .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
+            ?.getAttribute('content') ?? ''
+    );
+}
+
+async function fetchJson<T>(
+    url: string,
+    options: RequestInit = {},
+): Promise<T> {
+    const response = await fetch(url, {
+        credentials: 'same-origin',
+        ...options,
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            ...options.headers,
+        },
+    });
+    const data = (await response.json().catch(() => ({}))) as {
+        message?: string;
+    };
+
+    if (!response.ok) {
+        throw new Error(data.message ?? 'Error de consulta');
+    }
+
+    return data as T;
+}
 
 export function CheckoutDialog({
     open,
@@ -163,12 +194,15 @@ return;
         setLookupMsg(null);
 
         try {
-            const res = await axios.get(`/clients/document-lookup`, {
-                params: { document_type: docType, document_number: num },
+            const params = new URLSearchParams({
+                document_type: docType,
+                document_number: num,
             });
-            const payload = res.data as ClientLookupResponse & {
-                message?: string;
-            };
+            const payload = await fetchJson<
+                ClientLookupResponse & {
+                    message?: string;
+                }
+            >(`/clients/document-lookup?${params.toString()}`);
 
             if (payload.exists && 'id' in payload.client) {
                 const c =
@@ -250,12 +284,18 @@ setField('customer_address', c.metadata.address);
         };
 
         try {
-            const res = await axios.post('/caja/checkout', payload);
-            const data = res.data as {
+            const data = await fetchJson<{
                 success: boolean;
                 sale?: SaleData;
                 message?: string;
-            };
+            }>('/caja/checkout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken(),
+                },
+                body: JSON.stringify(payload),
+            });
 
             if (!data.success) {
                 setError(data.message ?? 'Error al procesar la venta.');
