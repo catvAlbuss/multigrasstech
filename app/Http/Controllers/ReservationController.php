@@ -56,7 +56,7 @@ class ReservationController extends Controller
     {
         abort_unless($request->user()->can('manage-reservations'), 403);
 
-        $data = $request->validate([
+        $data = $this->normalizeReservationData($request->validate([
             'field_id' => ['required', Rule::exists('fields', 'id')->where('tenant_id', tenant('id'))],
             'client_id' => ['nullable', Rule::exists('clients', 'id')->where('tenant_id', tenant('id'))],
             'date' => ['required', 'date'],
@@ -65,9 +65,9 @@ class ReservationController extends Controller
             'status' => ['required', 'in:pending,confirmed,completed,cancelled'],
             'amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
-        ]);
+        ]));
 
-        $this->ensureNoOverlap((int) $data['field_id'], $data['date'], $data['start_time'], $data['end_time']);
+        $this->ensureNoOverlap($data['field_id'], $data['date'], $data['start_time'], $data['end_time']);
 
         Reservation::create($data);
 
@@ -77,7 +77,7 @@ class ReservationController extends Controller
 
     public function publicStore(Request $request)
     {
-        $data = $request->validate([
+        $data = $this->normalizeReservationData($request->validate([
             'client_name' => ['required', 'string', 'max:120'],
             'client_phone' => ['required', 'string', 'max:30'],
             'client_email' => ['nullable', 'email', 'max:120'],
@@ -92,21 +92,21 @@ class ReservationController extends Controller
             'payment_operation_number' => ['required', 'string', 'max:80'],
             'payment_proof' => ['required', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'notes' => ['nullable', 'string', 'max:500'],
-        ]);
+        ]));
 
         $startTime = $data['start_time'];
         $endTime = Carbon::createFromFormat('H:i', $startTime)
-            ->addHours((int) $data['duration_hours'])
+            ->addHours($data['duration_hours'])
             ->format('H:i');
 
         $this->ensureWithinTenantBookingHours($startTime, $endTime);
-        $this->ensureNoOverlap((int) $data['field_id'], $data['date'], $startTime, $endTime);
+        $this->ensureNoOverlap($data['field_id'], $data['date'], $startTime, $endTime);
 
         $field = Field::findOrFail($data['field_id']);
-        $amount = round((float) $field->hourly_rate * (int) $data['duration_hours'], 2);
+        $amount = round((float) $field->hourly_rate * $data['duration_hours'], 2);
         $requiredAdvance = round($amount * 0.5, 2);
 
-        if (abs((float) $data['advance_amount'] - $requiredAdvance) > 0.01) {
+        if (abs($data['advance_amount'] - $requiredAdvance) > 0.01) {
             throw ValidationException::withMessages([
                 'advance_amount' => 'El adelanto debe ser el 50% del total: S/ '.number_format($requiredAdvance, 2, '.', ''),
             ]);
@@ -371,7 +371,7 @@ class ReservationController extends Controller
     {
         abort_unless($request->user()->can('manage-reservations'), 403);
 
-        $data = $request->validate([
+        $data = $this->normalizeReservationData($request->validate([
             'field_id' => ['required', Rule::exists('fields', 'id')->where('tenant_id', tenant('id'))],
             'client_id' => ['nullable', Rule::exists('clients', 'id')->where('tenant_id', tenant('id'))],
             'date' => ['required', 'date'],
@@ -380,10 +380,10 @@ class ReservationController extends Controller
             'status' => ['required', 'in:pending,confirmed,completed,cancelled'],
             'amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
-        ]);
+        ]));
 
         if (in_array($data['status'], ['pending', 'confirmed'])) {
-            $this->ensureNoOverlap((int) $data['field_id'], $data['date'], $data['start_time'], $data['end_time'], $reservation->id);
+            $this->ensureNoOverlap($data['field_id'], $data['date'], $data['start_time'], $data['end_time'], $reservation->id);
         }
 
         $reservation->update($data);
@@ -473,6 +473,33 @@ class ReservationController extends Controller
                 'start_time' => 'El horario seleccionado se cruza con otra reservación en este espacio físico.',
             ]);
         }
+    }
+
+    private function normalizeReservationData(array $data): array
+    {
+        if (array_key_exists('field_id', $data)) {
+            $data['field_id'] = (int) $data['field_id'];
+        }
+
+        if (array_key_exists('client_id', $data)) {
+            $data['client_id'] = $data['client_id'] === null || $data['client_id'] === ''
+                ? null
+                : (int) $data['client_id'];
+        }
+
+        if (array_key_exists('duration_hours', $data)) {
+            $data['duration_hours'] = (int) $data['duration_hours'];
+        }
+
+        if (array_key_exists('amount', $data)) {
+            $data['amount'] = (float) $data['amount'];
+        }
+
+        if (array_key_exists('advance_amount', $data)) {
+            $data['advance_amount'] = (float) $data['advance_amount'];
+        }
+
+        return $data;
     }
 
     private function ensureWithinTenantBookingHours(string $startTime, string $endTime): void

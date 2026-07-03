@@ -39,6 +39,25 @@ class ReservationCrudTest extends TenantTestCase
         $this->assertDatabaseHas('reservations', ['field_id' => $field->id, 'tenant_id' => $tenant->id]);
     }
 
+    public function test_admin_can_create_a_reservation_when_field_id_is_submitted_as_a_string(): void
+    {
+        $tenant = $this->createTenant();
+        $admin = $this->createTenantUser($tenant, 'admin');
+        $field = Field::create(array_merge($this->fieldPayload(), ['tenant_id' => $tenant->id]));
+
+        $response = $this->actingAs($admin)->post($this->tenantUrl($tenant, 'reservations'), [
+            'field_id' => (string) $field->id,
+            'date' => now()->addDay()->toDateString(),
+            'start_time' => '10:00',
+            'end_time' => '11:00',
+            'status' => 'pending',
+            'amount' => '50',
+        ]);
+
+        $response->assertRedirect();
+        $this->assertDatabaseHas('reservations', ['field_id' => $field->id, 'tenant_id' => $tenant->id]);
+    }
+
     public function test_overlapping_reservations_are_rejected(): void
     {
         $tenant = $this->createTenant();
