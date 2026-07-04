@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\Reservation;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Transaction;
@@ -19,7 +20,7 @@ use Inertia\Response;
 
 class CajaController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $products = Product::where('is_active', true)
             ->with(['variants' => fn ($q) => $q->where('is_active', true)->orderBy('sort_order')])
@@ -54,10 +55,23 @@ class CajaController extends Controller
             ->sum('amount');
         $totalExpense = (float) $expensesToday->sum('amount');
 
+        $pendingReservation = null;
+        if ($request->filled('reservation_id')) {
+            $pendingReservation = Reservation::with(['field:id,name', 'client:id,name,phone'])
+                ->where('tenant_id', tenant('id'))
+                ->find($request->integer('reservation_id'));
+        }
+
+        $pendingReservationIntent = in_array($request->query('payment_type'), ['advance', 'full'], true)
+            ? $request->query('payment_type')
+            : null;
+
         return Inertia::render('tenant/caja/index', [
             'products' => $products,
             'sales_today' => $salesToday->values(),
             'expenses_today' => $expensesToday->values(),
+            'pending_reservation' => $pendingReservation,
+            'pending_reservation_intent' => $pendingReservationIntent,
             'totals_today' => [
                 'income' => round($salesIncome + $manualIncome, 2),
                 'expense' => round($totalExpense, 2),
@@ -269,5 +283,54 @@ class CajaController extends Controller
         ]);
 
         return back()->with('success', 'Salida registrada correctamente.');
+    }
+
+    public function reservationPayment(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()->can('manage-caja'), 403);
+
+        $data = $request->validate([
+            'reservation_id' => ['required', Rule::exists('reservations', 'id')->where('tenant_id', tenant('id'))],
+            'payment_type' => ['required', Rule::in(['advance', 'full'])],
+            'amount' => ['required', 'numeric', 'min:0.01'],
+        ]);
+
+        $reservation = Reservation::with(['field', 'client'])->findOrFail($data['reservation_id']);
+        $reservationTotal = round((float) $reservation->amount, 2);
+        $alreadyPaid = round((float) $reservation->advance_amount, 2);
+        $pendingAmount = max(0, round($reservationTotal - $alreadyPaid, 2));
+        $amount = $data['payment_type'] === 'full'
+            ? $pendingAmount
+            : min(round((float) $data['amount'], 2), $pendingAmount);
+
+        if ($amount <= 0) {
+            return back()->with('error', 'La reserva no tiene saldo pendiente por cobrar.');
+        }
+
+        DB::transaction(function () use ($reservation, $data, $amount, $alreadyPaid, $reservationTotal) {
+            Transaction::create([
+                'type' => 'income',
+                'category' => 'reserva',
+                'description' => sprintf(
+                    'Cobro de reserva %s - %s',
+                    $reservation->code,
+                    $reservation->field?->name ?? 'Cancha'
+                ),
+                'amount' => $amount,
+                'date' => now()->toDateString(),
+                'reservation_id' => $reservation->id,
+                'notes' => $data['payment_type'] === 'full' ? 'Pago completo en caja.' : 'Adelanto en caja.',
+            ]);
+
+            $newPaidAmount = min($reservationTotal, round($alreadyPaid + $amount, 2));
+            $reservation->forceFill([
+                'advance_amount' => $newPaidAmount,
+                'payment_method' => 'caja',
+                'status' => $newPaidAmount >= $reservationTotal ? 'confirmed' : $reservation->status,
+            ])->save();
+        });
+
+        return redirect()->route('caja.index', ['reservation_id' => $reservation->id])
+            ->with('success', 'Cobro de reserva registrado correctamente.');
     }
 }

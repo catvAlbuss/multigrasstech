@@ -10,21 +10,21 @@ type Metric = {
 
 function MetricCard({ label, value, sub, tone = 'default' }: Metric) {
     const toneClass = {
-        default: 'text-slate-950 dark:text-neutral-50',
-        green: 'text-emerald-600 dark:text-emerald-300',
-        red: 'text-rose-600 dark:text-rose-300',
+        default: 'text-slate-50',
+        green: 'text-emerald-300',
+        red: 'text-rose-300',
     }[tone];
 
     return (
-        <div className="min-w-[118px] rounded-md bg-slate-50 px-3 py-2 dark:bg-neutral-950 sm:min-w-0">
-            <p className="truncate text-xs text-slate-500 dark:text-neutral-400">
+        <div className="min-w-[118px] rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 sm:min-w-0">
+            <p className="truncate text-xs text-slate-400">
                 {label}
             </p>
             <p className={`truncate text-base leading-tight font-black ${toneClass}`}>
                 {value}
             </p>
             {sub && (
-                <p className="truncate text-xs text-slate-500 dark:text-neutral-400">
+                <p className="truncate text-xs text-slate-500">
                     {sub}
                 </p>
             )}
@@ -42,19 +42,20 @@ export function CajaHeader({ date, productsCount, variantsCount, cartUnits, resu
     movementsCount: number;
 }) {
     return (
-        <section className="shrink-0 rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900 sm:p-4">
+        <section className="shrink-0 rounded-lg border border-white/10 bg-slate-900/70 p-3 shadow-[0_20px_50px_rgba(0,0,0,0.24)] backdrop-blur sm:p-4">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm">
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-emerald-400/30 bg-emerald-500/15 text-emerald-300 shadow-[0_0_28px_rgba(34,197,94,0.16)]">
                         <ShoppingBasket className="size-6" />
                     </span>
 
                     <div className="min-w-0">
-                        <h1 className="truncate text-2xl leading-tight font-black text-slate-950 dark:text-neutral-50">
-                            Caja
+                        <h1 className="truncate text-2xl leading-tight font-black text-slate-50">
+                            Caja de ventas
                         </h1>
-                        <p className="truncate text-sm text-slate-500 capitalize dark:text-neutral-400">
-                            {date}
+                        <p className="truncate text-sm text-slate-400">
+                            Punto de venta del complejo deportivo ·{' '}
+                            <span className="capitalize">{date}</span>
                         </p>
                     </div>
                 </div>

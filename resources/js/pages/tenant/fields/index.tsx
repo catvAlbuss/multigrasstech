@@ -5,6 +5,7 @@ import {
     LayoutGrid,
     Pencil,
     Plus,
+    Ruler,
     Search,
     Trash2,
     Users,
@@ -114,12 +115,20 @@ function FieldCard({
                             {field.description ||
                                 'Campo deportivo disponible para reservaciones.'}
                         </p>
-                        {field.shared_group_id && (
-                            <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400">
-                                <Layers className="size-3" />
-                                <span>Espacio compartido</span>
-                            </div>
-                        )}
+                        <div className="mt-1 flex flex-wrap items-center gap-1 text-[10px]">
+                            {field.shared_group_id && (
+                                <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                                    <Layers className="size-3" />
+                                    <span>Espacio compartido</span>
+                                </span>
+                            )}
+                            {field.zona_tribuna_label && (
+                                <span className="flex items-center gap-1 text-amber-700 dark:text-amber-300">
+                                    <Users className="size-3" />
+                                    <span>{field.zona_tribuna_label}</span>
+                                </span>
+                            )}
+                        </div>
                     </div>
                     <Badge
                         className={`shrink-0 border text-[10px] ${STATUS_COLORS[field.status] ?? ''}`}
@@ -137,6 +146,12 @@ function FieldCard({
                         <CircleDollarSign className="size-3.5 text-green-600" />
                         <span>{formatCurrency(field.hourly_rate)}/h</span>
                     </div>
+                    {field.area_label ? (
+                        <div className="col-span-2 flex items-center gap-2 rounded-md bg-green-50/70 px-2.5 py-1.5 text-[11px] font-medium text-green-800 dark:bg-green-950/40 dark:text-green-300">
+                            <Ruler className="size-3.5" />
+                            <span>Área y perímetro: {field.area_label}</span>
+                        </div>
+                    ) : null}
                 </div>
 
                 <div className="mt-4 flex items-center justify-between border-t pt-3">

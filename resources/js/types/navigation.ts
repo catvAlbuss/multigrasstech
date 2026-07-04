@@ -13,3 +13,18 @@ export type NavItem = {
     isActive?: boolean;
     disabled?: boolean;
 };
+
+export type AppNotification = {
+    id: string;
+    type: 'success' | 'error' | 'reservation' | 'system';
+    title: string;
+    body: string;
+    href: string | null;
+    read: boolean;
+    created_at: string;
+};
+
+export type AppNotifications = {
+    items: AppNotification[];
+    unread_count: number;
+};

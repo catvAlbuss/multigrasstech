@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Reservation;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -55,6 +56,62 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            'notifications' => fn () => $this->notifications($request),
+        ];
+    }
+
+    private function notifications(Request $request): array
+    {
+        $items = [];
+
+        if ($success = $request->session()->get('success')) {
+            $items[] = [
+                'id' => 'flash-success',
+                'type' => 'success',
+                'title' => 'Acción completada',
+                'body' => $success,
+                'href' => null,
+                'read' => false,
+                'created_at' => now()->toIso8601String(),
+            ];
+        }
+
+        if ($error = $request->session()->get('error')) {
+            $items[] = [
+                'id' => 'flash-error',
+                'type' => 'error',
+                'title' => 'Requiere atención',
+                'body' => $error,
+                'href' => null,
+                'read' => false,
+                'created_at' => now()->toIso8601String(),
+            ];
+        }
+
+        if (tenancy()->initialized && $request->user()) {
+            $pendingReservations = Reservation::where('tenant_id', tenant('id'))
+                ->where('status', 'pending')
+                ->whereDate('date', '>=', today())
+                ->count();
+
+            if ($pendingReservations > 0) {
+                $items[] = [
+                    'id' => 'pending-reservations',
+                    'type' => 'reservation',
+                    'title' => 'Reservas pendientes',
+                    'body' => $pendingReservations === 1
+                        ? 'Tienes 1 reserva pendiente por revisar.'
+                        : "Tienes {$pendingReservations} reservas pendientes por revisar.",
+                    'href' => '/reservations?status=pending',
+                    'read' => false,
+                    'created_at' => now()->toIso8601String(),
+                ];
+            }
+        }
+
+        return [
+            'items' => $items,
+            'unread_count' => collect($items)->where('read', false)->count(),
         ];
     }
 }

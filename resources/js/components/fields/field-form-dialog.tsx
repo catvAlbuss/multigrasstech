@@ -1,5 +1,5 @@
 import { useForm } from '@inertiajs/react';
-import { ImagePlus, Star, Trash2, UploadCloud } from 'lucide-react';
+import { ImagePlus, Ruler, Star, Trash2, UploadCloud, Users } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import Select from 'react-select';
 import { Button } from '@/components/ui/button';
@@ -31,11 +31,23 @@ type FieldFormData = {
     hourly_rate: string;
     status: string;
     is_featured: boolean;
+    ancho: number | string;
+    largo: number | string;
+    zona_tribuna: boolean;
     image: File | null;
     remove_image: boolean;
     shared_with: number[];
+    _token: string;
     _method?: 'put';
 };
+
+function csrfToken() {
+    return (
+        document
+            .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
+            ?.getAttribute('content') ?? ''
+    );
+}
 
 const sportOptions = [
     { value: '', label: 'Sin deporte específico' },
@@ -81,9 +93,13 @@ export function FieldFormDialog({
             hourly_rate: field?.hourly_rate ?? '',
             status: field?.status ?? 'active',
             is_featured: field?.is_featured ?? false,
+            ancho: field?.ancho ?? '',
+            largo: field?.largo ?? '',
+            zona_tribuna: field?.zona_tribuna ?? false,
             image: null,
             remove_image: false,
             shared_with: initialSharedWith.map((o) => o.value),
+            _token: csrfToken(),
         });
 
     const previewUrl = useMemo(() => {
@@ -123,6 +139,9 @@ export function FieldFormDialog({
                 hourly_rate: field.hourly_rate,
                 status: field.status,
                 is_featured: field.is_featured,
+                ancho: field.ancho ?? '',
+                largo: field.largo ?? '',
+                zona_tribuna: field.zona_tribuna ?? false,
                 image: null,
                 remove_image: false,
                 shared_with: field.shared_group_id
@@ -130,9 +149,26 @@ export function FieldFormDialog({
                           .filter((o) => o.groupId === field.shared_group_id)
                           .map((o) => o.value)
                     : [],
+                _token: csrfToken(),
             });
         } else {
-            reset();
+            setData({
+                name: '',
+                description: '',
+                surface_type: 'artificial',
+                sport_type: '',
+                capacity: 0,
+                hourly_rate: '',
+                status: 'active',
+                is_featured: false,
+                ancho: '',
+                largo: '',
+                zona_tribuna: false,
+                image: null,
+                remove_image: false,
+                shared_with: [],
+                _token: csrfToken(),
+            });
         }
     }, [open, field]);
 
@@ -149,7 +185,6 @@ export function FieldFormDialog({
             return;
         }
 
-        transform(({ _method, ...data }) => data);
         post('/fields', {
             forceFormData: true,
             onSuccess: () => {
@@ -375,6 +410,67 @@ export function FieldFormDialog({
                             )}
                         </div>
 
+                        <div className="space-y-1.5 sm:col-span-2">
+                            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                                <Ruler className="size-3.5" />
+                                Dimensiones del campo (metros)
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <Label htmlFor="ancho">Ancho</Label>
+                                    <Input
+                                        id="ancho"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={data.ancho}
+                                        onChange={(e) =>
+                                            setData('ancho', e.target.value)
+                                        }
+                                        placeholder="0.00"
+                                        className={
+                                            errors.ancho ? 'border-red-500' : ''
+                                        }
+                                    />
+                                    {errors.ancho && (
+                                        <p className="text-xs text-red-500">
+                                            {errors.ancho}
+                                        </p>
+                                    )}
+                                </div>
+                                <div>
+                                    <Label htmlFor="largo">Largo</Label>
+                                    <Input
+                                        id="largo"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={data.largo}
+                                        onChange={(e) =>
+                                            setData('largo', e.target.value)
+                                        }
+                                        placeholder="0.00"
+                                        className={
+                                            errors.largo ? 'border-red-500' : ''
+                                        }
+                                    />
+                                    {errors.largo && (
+                                        <p className="text-xs text-red-500">
+                                            {errors.largo}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            {data.ancho && data.largo && Number(data.ancho) > 0 && Number(data.largo) > 0 ? (
+                                <div className="rounded-lg border bg-muted/40 p-2 text-xs">
+                                    <span className="font-medium">
+                                        {Number(data.ancho) * Number(data.largo) > 0 ? `${(Number(data.ancho) * Number(data.largo)).toFixed(2)} m²` : ''} 
+                                        {Number(data.ancho) * Number(data.largo) > 0 && Number(data.ancho) > 0 && Number(data.largo) > 0 ? ` | ${(2 * (Number(data.ancho) + Number(data.largo))).toFixed(2)} m` : ''}
+                                    </span>
+                                </div>
+                            ) : null}
+                        </div>
+
                         <div className="space-y-1.5">
                             <Label htmlFor="status">Estado *</Label>
                             <select
@@ -414,6 +510,25 @@ export function FieldFormDialog({
                                 <p className="text-xs text-muted-foreground">
                                     Se mostrará como campo principal en el
                                     welcome.
+                                </p>
+                            </div>
+                        </label>
+
+                        <label className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
+                            <Checkbox
+                                checked={data.zona_tribuna}
+                                onCheckedChange={(checked) =>
+                                    setData('zona_tribuna', checked === true)
+                                }
+                            />
+                            <div>
+                                <span className="flex items-center gap-1.5 text-sm font-medium">
+                                    <Users className="size-3.5 text-blue-600" />
+                                    Zona de tribuna
+                                </span>
+                                <p className="text-xs text-muted-foreground">
+                                    Marcar si el campo cuenta con tribuna o
+                                    zona de espera para público.
                                 </p>
                             </div>
                         </label>

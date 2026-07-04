@@ -71,6 +71,7 @@ export type ClientFormData = {
     is_active: boolean;
     image?: File | null;
     remove_image?: boolean;
+    _token?: string;
     _method?: 'put';
 };
 
@@ -103,6 +104,11 @@ export type TenantField = {
     is_featured: boolean;
     description: string | null;
     image_url?: string | null;
+    ancho?: number | string | null;
+    largo?: number | string | null;
+    area_label?: string | null;
+    zona_tribuna?: boolean;
+    zona_tribuna_label?: string | null;
     shared_group_id?: string | null;
     shared_fields?: TenantField[];
 };
@@ -146,7 +152,7 @@ export type TenantReservation = {
     end_time: string;
     status: string;
     amount: string;
-    payment_method?: 'yape' | 'plin' | null;
+    payment_method?: 'yape' | 'plin' | 'caja' | null;
     advance_amount?: string | null;
     payment_operation_number?: string | null;
     payment_expires_at?: string | null;
@@ -195,18 +201,29 @@ export type ProductsIndexPageProps = {
     filters: { search: string; category: string };
 };
 
-export type ReservationFormPageProps = {
+export type ReservationEditPageProps = {
+    reservation: TenantReservation;
     fields: TenantFieldOption[];
     clients: TenantClientOption[];
-};
-
-export type ReservationEditPageProps = ReservationFormPageProps & {
-    reservation: TenantReservation;
+    booking_hours?: { start: string; end: string };
 };
 
 export type ReservationsIndexPageProps = {
     reservations: Paginated<TenantReservation>;
+    fields: TenantFieldOption[];
+    clients: TenantClientOption[];
+    booking_hours?: { start: string; end: string };
     filters: { search: string; status: string; date: string };
+};
+
+export type CalendarSummaryDay = {
+    date: string;
+    total: number;
+    amount: number;
+    pending: number;
+    confirmed: number;
+    completed: number;
+    cancelled: number;
 };
 
 export type TransactionFormPageProps = {

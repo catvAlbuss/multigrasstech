@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ChevronRight,
     FileText,
@@ -12,6 +11,7 @@ import {
     ZoomIn,
     ZoomOut,
 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type TreeNode = {
     id: string;
@@ -278,6 +278,7 @@ function layoutTree(
             hasChildren: node.children && node.children.length > 0,
             expanded: isExpanded,
         };
+
         return y;
     }
 
@@ -292,6 +293,7 @@ function layoutTree(
         hasChildren: node.children && node.children.length > 0,
         expanded: isExpanded,
     };
+
     return y;
 }
 
@@ -310,6 +312,7 @@ export default function AutoMapDemo() {
             layoutTree(root, expanded, 0, yRef, pos, null, root.id);
             yRef.current += TREE_GAP;
         });
+
         return pos;
     }, [expanded]);
 
@@ -319,12 +322,19 @@ export default function AutoMapDemo() {
 
     const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         const target = e.target as HTMLElement;
-        if (target.closest('[data-node]')) return;
+
+        if (target.closest('[data-node]')) {
+return;
+}
+
         dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
     };
 
     const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (!dragRef.current) return;
+        if (!dragRef.current) {
+return;
+}
+
         const dx = e.clientX - dragRef.current.startX;
         const dy = e.clientY - dragRef.current.startY;
         setPan({ x: dragRef.current.panX + dx, y: dragRef.current.panY + dy });
@@ -336,7 +346,10 @@ export default function AutoMapDemo() {
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+
+        if (!canvas) {
+return;
+}
 
         const onWheel = (e: WheelEvent) => {
             e.preventDefault();
@@ -362,7 +375,9 @@ export default function AutoMapDemo() {
         if (!p.parentId || !positions[p.parentId]) {
             return [];
         }
+
         const parent = positions[p.parentId];
+
         return [{ from: parent, to: p }];
     });
 
@@ -417,6 +432,7 @@ export default function AutoMapDemo() {
                                 const y2 = e.to.y + NODE_H / 2;
                                 const midX = (x1 + x2) / 2;
                                 const c = COLORS[e.from.node.color] || COLORS.violet;
+
                                 return (
                                     <path
                                         key={i}
@@ -435,6 +451,7 @@ export default function AutoMapDemo() {
                             const Icon = TYPE_ICON[p.node.type] || FileText;
                             const isRoot = p.parentId === null;
                             const isSelected = selected !== null && selected.id === p.node.id;
+
                             return (
                                 <div key={p.node.id} data-node style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }} className="absolute">
                                     <button
@@ -503,6 +520,7 @@ export default function AutoMapDemo() {
                                 {(() => {
                                     const c = COLORS[selected.color] || COLORS.violet;
                                     const Icon = TYPE_ICON[selected.type] || FileText;
+
                                     return (
                                         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${c.bg}/20`}>
                                             <Icon size={14} className={c.text} />

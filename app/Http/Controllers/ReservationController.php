@@ -10,8 +10,10 @@ use App\Models\Reservation;
 use App\Models\TenantProfile;
 use App\Services\PeruDocumentLookupService;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -23,12 +25,16 @@ class ReservationController extends Controller
 {
     public function index(Request $request): Response
     {
+        // Default to today so the page always opens scoped to the current day;
+        // an explicitly blanked date (?date=) is treated as "show all dates".
+        $date = $request->has('date') ? $request->string('date')->toString() : now()->toDateString();
+
         $reservations = Reservation::query()
             ->with(['field:id,name,shared_group_id', 'client:id,name,phone'])
             ->when($request->search, fn ($q, $s) => $q->where('code', 'like', "%{$s}%")
                 ->orWhereHas('client', fn ($q2) => $q2->where('name', 'like', "%{$s}%")))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
-            ->when($request->date, fn ($q, $d) => $q->whereDate('date', $d))
+            ->when($date !== '', fn ($q) => $q->whereDate('date', $date))
             ->orderByDesc('date')
             ->orderBy('start_time')
             ->paginate(15)
@@ -36,19 +42,14 @@ class ReservationController extends Controller
 
         return Inertia::render('tenant/reservations/index', [
             'reservations' => $reservations,
+            'fields' => Field::where('status', 'active')->orderBy('name')->get(['id', 'name', 'hourly_rate']),
+            'clients' => Client::where('is_active', true)->orderBy('name')->get(['id', 'name', 'phone']),
+            'booking_hours' => $this->bookingHours(),
             'filters' => [
                 'search' => $request->search ?? '',
                 'status' => $request->status ?? '',
-                'date' => $request->date ?? '',
+                'date' => $date,
             ],
-        ]);
-    }
-
-    public function create(): Response
-    {
-        return Inertia::render('tenant/reservations/create', [
-            'fields' => Field::where('status', 'active')->orderBy('name')->get(['id', 'name', 'hourly_rate']),
-            'clients' => Client::where('is_active', true)->orderBy('name')->get(['id', 'name', 'phone']),
         ]);
     }
 
@@ -56,23 +57,92 @@ class ReservationController extends Controller
     {
         abort_unless($request->user()->can('manage-reservations'), 403);
 
-        $data = $this->normalizeReservationData($request->validate([
+        $validated = $request->validate([
             'field_id' => ['required', Rule::exists('fields', 'id')->where('tenant_id', tenant('id'))],
             'client_id' => ['nullable', Rule::exists('clients', 'id')->where('tenant_id', tenant('id'))],
+            'new_client_name' => ['nullable', 'string', 'max:120'],
+            'new_client_phone' => ['nullable', 'string', 'max:30'],
             'date' => ['required', 'date'],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
             'status' => ['required', 'in:pending,confirmed,completed,cancelled'],
             'amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
-        ]));
+            'mark_as_paid' => ['nullable', 'boolean'],
+            'payment_type' => ['nullable', Rule::in(['advance', 'full'])],
+        ]);
 
+        if (empty($validated['client_id']) && ! empty($validated['new_client_name'])) {
+            $client = null;
+
+            if (! empty($validated['new_client_phone'])) {
+                $client = Client::where('phone', $validated['new_client_phone'])->first();
+            }
+
+            $client ??= Client::create([
+                'name' => $validated['new_client_name'],
+                'phone' => $validated['new_client_phone'] ?? null,
+                'is_active' => true,
+            ]);
+
+            $validated['client_id'] = $client->id;
+        }
+
+        $markAsPaid = (bool) ($validated['mark_as_paid'] ?? false);
+        $paymentType = $validated['payment_type'] ?? null;
+
+        $data = $this->normalizeReservationData(collect($validated)
+            ->only(['field_id', 'client_id', 'date', 'start_time', 'end_time', 'status', 'amount', 'notes'])
+            ->toArray());
+
+        $this->ensureWithinTenantBookingHours($data['start_time'], $data['end_time']);
         $this->ensureNoOverlap($data['field_id'], $data['date'], $data['start_time'], $data['end_time']);
 
-        Reservation::create($data);
+        if ($markAsPaid) {
+            $data['status'] = 'completed';
+            $data['advance_amount'] = $data['amount'];
+            $data['payment_method'] = 'historico';
+        }
 
-        return redirect()->route('reservations.index')
-            ->with('success', 'Reservación creada correctamente.');
+        $reservation = Reservation::create($data);
+
+        if ($markAsPaid) {
+            return redirect()->route('reservations.index')
+                ->with('success', 'Reserva histórica registrada correctamente.');
+        }
+
+        return redirect()->route('caja.index', [
+            'reservation_id' => $reservation->id,
+            'payment_type' => $paymentType,
+        ])->with('success', 'Reservación creada correctamente.');
+    }
+
+    public function calendarSummary(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'from' => ['required', 'date'],
+            'to' => ['required', 'date', 'after_or_equal:from'],
+        ]);
+
+        $from = Carbon::parse($data['from'])->startOfDay();
+        $to = Carbon::parse($data['to'])->startOfDay();
+
+        if ($from->diffInDays($to) > 45) {
+            $to = $from->copy()->addDays(45);
+        }
+
+        $rows = DB::table('reservations')
+            ->where('tenant_id', tenant('id'))
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->selectRaw("date, count(*) as total, coalesce(sum(amount), 0) as amount,
+                sum(case when status = 'pending' then 1 else 0 end) as pending,
+                sum(case when status = 'confirmed' then 1 else 0 end) as confirmed,
+                sum(case when status = 'completed' then 1 else 0 end) as completed,
+                sum(case when status = 'cancelled' then 1 else 0 end) as cancelled")
+            ->groupBy('date')
+            ->get();
+
+        return response()->json($rows);
     }
 
     public function publicStore(Request $request)
@@ -449,6 +519,16 @@ class ReservationController extends Controller
         $reservations = $query->get(['start_time', 'end_time']);
 
         return response()->json($reservations);
+    }
+
+    private function bookingHours(): array
+    {
+        $profile = TenantProfile::first();
+
+        return [
+            'start' => substr((string) ($profile?->booking_start_time ?? '06:00'), 0, 5),
+            'end' => substr((string) ($profile?->booking_end_time ?? '23:00'), 0, 5),
+        ];
     }
 
     private function ensureNoOverlap(int $fieldId, string $date, string $startTime, string $endTime, ?int $ignoreReservationId = null): void

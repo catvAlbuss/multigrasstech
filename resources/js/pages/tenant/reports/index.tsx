@@ -519,6 +519,7 @@ function SalesView({ data }: { data: SalesData }) {
         boleta: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30',
         factura: 'bg-green-100 text-green-700 dark:bg-green-900/30',
     };
+
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -733,6 +734,7 @@ function ReservationsView({ data }: { data: ReservationsData }) {
         pending: 'Pendiente',
         cancelled: 'Cancelada',
     };
+
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -821,6 +823,7 @@ function ReservationsView({ data }: { data: ReservationsData }) {
                                                   100,
                                           )
                                         : 0;
+
                                 return (
                                     <div key={i}>
                                         <div className="flex justify-between text-xs">
@@ -940,6 +943,7 @@ function ExpensesView({ data }: { data: ExpensesData }) {
         '#10b981',
         '#6366f1',
     ];
+
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -1161,7 +1165,11 @@ export default function ReportsIndex({
             month,
             doc_type: docType ?? 'all',
         };
-        if (week) base.week = week;
+
+        if (week) {
+base.week = week;
+}
+
         router.get(
             '/reports',
             { ...base, ...params },
@@ -1175,7 +1183,11 @@ export default function ReportsIndex({
             month,
             doc_type: docType ?? 'all',
         });
-        if (week) params.set('week', week);
+
+        if (week) {
+params.set('week', week);
+}
+
         window.location.assign(`/reports/pdf?${params.toString()}`);
     }
 
@@ -1265,6 +1277,7 @@ export default function ReportsIndex({
                     {REPORT_TABS.map((tab) => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.key;
+
                         return (
                             <button
                                 key={tab.key}

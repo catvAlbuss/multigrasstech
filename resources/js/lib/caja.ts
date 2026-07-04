@@ -1,8 +1,8 @@
 import type { CartItem } from '@/types/caja';
 
 export const CATEGORY_LABELS: Record<string, string> = {
-    bebida: '🥤Bebidas',
-    snack: '🥞Snacks',
+    bebida: 'Bebidas',
+    snack: 'Snacks',
     protector: 'Protectores',
     equipo: 'Equipos',
     otro: 'Otros',

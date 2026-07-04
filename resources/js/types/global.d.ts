@@ -1,4 +1,5 @@
 import type { Auth, TenantShared } from '@/types/auth';
+import type { AppNotifications } from '@/types/navigation';
 
 declare module 'react' {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -14,6 +15,7 @@ declare module '@inertiajs/core' {
             auth: Auth;
             tenant: TenantShared;
             sidebarOpen: boolean;
+            notifications: AppNotifications;
             [key: string]: unknown;
         };
     }

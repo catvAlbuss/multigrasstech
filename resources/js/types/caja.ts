@@ -1,4 +1,4 @@
-import type { ProductVariant } from './tenant';
+import type { ProductVariant, TenantReservation } from './tenant';
 
 export type CajaProduct = {
     id: number;
@@ -95,6 +95,8 @@ export type CajaIndexPageProps = {
     products: CajaProduct[];
     sales_today: CajaSaleToday[];
     expenses_today: CajaExpenseTransaction[];
+    pending_reservation?: TenantReservation | null;
+    pending_reservation_intent?: 'advance' | 'full' | null;
     totals_today: {
         income: number;
         expense: number;

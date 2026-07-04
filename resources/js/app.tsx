@@ -1,4 +1,4 @@
-import { createInertiaApp } from '@inertiajs/react';
+import { createInertiaApp, router } from '@inertiajs/react';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -8,6 +8,19 @@ import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+
+// A stale session/CSRF token (e.g. a tab left open past session lifetime)
+// makes Laravel return a non-Inertia 419/401 response. Instead of Inertia's
+// raw HTML error overlay, just reload so the user gets a fresh token and
+// can resubmit immediately.
+router.on('httpException', (event) => {
+    const status = event.detail.response.status;
+
+    if (status === 419 || status === 401) {
+        event.preventDefault();
+        window.location.reload();
+    }
+});
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),

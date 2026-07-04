@@ -26,6 +26,9 @@ class Field extends Model implements HasMedia
         'hourly_rate',
         'status',
         'is_featured',
+        'ancho',
+        'largo',
+        'zona_tribuna',
         'image_path',
         'shared_group_id',
     ];
@@ -34,9 +37,12 @@ class Field extends Model implements HasMedia
         'hourly_rate' => 'decimal:2',
         'capacity' => 'integer',
         'is_featured' => 'boolean',
+        'ancho' => 'decimal:2',
+        'largo' => 'decimal:2',
+        'zona_tribuna' => 'boolean',
     ];
 
-    protected $appends = ['image_url'];
+    protected $appends = ['image_url', 'area_label', 'zona_tribuna_label'];
 
     public function registerMediaConversions(?Media $media = null): void
     {
@@ -55,6 +61,29 @@ class Field extends Model implements HasMedia
     {
         return Attribute::make(
             get: fn () => $this->getFirstMediaUrl('image', 'optimized') ?: ($this->getFirstMediaUrl('image') ?: null),
+        );
+    }
+
+    protected function areaLabel(): Attribute
+    {
+        return Attribute::make(
+            get: function () {
+                if (! $this->ancho || ! $this->largo) {
+                    return null;
+                }
+
+                $area = round((float) $this->ancho * (float) $this->largo, 2);
+                $perimetro = round(2 * ((float) $this->ancho + (float) $this->largo), 2);
+
+                return "{$area} m² | {$perimetro} m";
+            },
+        );
+    }
+
+    protected function zonaTribunaLabel(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->zona_tribuna ? 'Con tribuna' : null,
         );
     }
 

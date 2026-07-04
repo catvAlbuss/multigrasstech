@@ -74,6 +74,7 @@ Route::middleware([
         // --- Caja ---
         Route::get('caja', [CajaController::class, 'index'])->name('caja.index');
         Route::post('caja/checkout', [CajaController::class, 'checkout'])->name('caja.checkout');
+        Route::post('caja/reservation-payment', [CajaController::class, 'reservationPayment'])->name('caja.reservation-payment');
         Route::post('caja/expense', [CajaController::class, 'expense'])->name('caja.expense');
 
         // --- Campos deportivos ---
@@ -87,9 +88,10 @@ Route::middleware([
 
         // --- Reservaciones ---
         Route::get('reservations/availability', [ReservationController::class, 'availability'])->name('reservations.availability');
+        Route::get('reservations/calendar-summary', [ReservationController::class, 'calendarSummary'])->name('reservations.calendar-summary');
         Route::patch('reservations/{reservation}/approve', [ReservationController::class, 'approve'])->name('reservations.approve');
         Route::patch('reservations/{reservation}/reject', [ReservationController::class, 'reject'])->name('reservations.reject');
-        Route::resource('reservations', ReservationController::class)->except(['show']);
+        Route::resource('reservations', ReservationController::class)->except(['show', 'create']);
 
         // --- Asistencia ---
         Route::get('attendance', [AttendanceController::class, 'index'])->name('attendance.index');

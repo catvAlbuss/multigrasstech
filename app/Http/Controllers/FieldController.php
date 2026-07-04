@@ -45,6 +45,9 @@ class FieldController extends Controller
             'hourly_rate' => ['required', 'numeric', 'min:0'],
             'status' => ['required', 'in:active,maintenance,inactive,blocked'],
             'is_featured' => ['sometimes', 'boolean'],
+            'ancho' => ['nullable', 'numeric', 'min:0'],
+            'largo' => ['nullable', 'numeric', 'min:0'],
+            'zona_tribuna' => ['sometimes', 'boolean'],
             'image' => ['nullable', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'shared_with' => ['nullable', 'array'],
             'shared_with.*' => [Rule::exists('fields', 'id')->where('tenant_id', tenant('id'))],
@@ -53,6 +56,7 @@ class FieldController extends Controller
         $sharedWithIds = $data['shared_with'] ?? [];
         unset($data['image'], $data['shared_with']);
         $data['is_featured'] = $request->boolean('is_featured');
+        $data['zona_tribuna'] = $request->boolean('zona_tribuna');
 
         // Determine shared_group_id
         if (! empty($sharedWithIds)) {
@@ -88,6 +92,9 @@ class FieldController extends Controller
             'hourly_rate' => ['required', 'numeric', 'min:0'],
             'status' => ['required', 'in:active,maintenance,inactive,blocked'],
             'is_featured' => ['sometimes', 'boolean'],
+            'ancho' => ['nullable', 'numeric', 'min:0'],
+            'largo' => ['nullable', 'numeric', 'min:0'],
+            'zona_tribuna' => ['sometimes', 'boolean'],
             'image' => ['nullable', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'remove_image' => ['sometimes', 'boolean'],
             'shared_with' => ['nullable', 'array'],
@@ -97,6 +104,7 @@ class FieldController extends Controller
         $sharedWithIds = $data['shared_with'] ?? [];
         unset($data['image'], $data['remove_image'], $data['shared_with']);
         $data['is_featured'] = $request->boolean('is_featured');
+        $data['zona_tribuna'] = $request->boolean('zona_tribuna');
 
         // Handle shared_group_id
         if (empty($sharedWithIds)) {

@@ -1,4 +1,4 @@
-import { format, parse, addHours, isBefore, startOfDay, parseISO } from 'date-fns';
+import { addHours, format, parse } from 'date-fns';
 import { Clock, Minus, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ interface TimeSlotPickerProps {
     durationHours: number;
     onChangeTime: (start: string, duration: number) => void;
     ignoreReservationId?: number;
+    bookingHours?: { start: string; end: string };
 }
 
 export function TimeSlotPicker({
@@ -20,15 +21,17 @@ export function TimeSlotPicker({
     durationHours,
     onChangeTime,
     ignoreReservationId,
+    bookingHours,
 }: TimeSlotPickerProps) {
-    const [occupiedSlots, setOccupiedSlots] = useState<{ start_time: string; end_time: string }[]>([]);
+    const [occupiedSlots, setOccupiedSlots] = useState<
+        { start_time: string; end_time: string }[]
+    >([]);
     const [loading, setLoading] = useState(false);
 
-    // Fetch availability when fieldId or date changes
     useEffect(() => {
         if (!fieldId || !date) {
-return;
-}
+            return;
+        }
 
         setLoading(true);
         const url = new URL('/reservations/availability', window.location.origin);
@@ -51,45 +54,42 @@ return;
             });
     }, [fieldId, date, ignoreReservationId]);
 
-    // Generate slots from 06:00 to 23:00
-    const generateSlots = () => {
-        const slots = [];
+    const startHour = Number((bookingHours?.start ?? '06:00').slice(0, 2));
+    const endHour = Number((bookingHours?.end ?? '23:00').slice(0, 2));
+    const slots = Array.from({ length: Math.max(0, endHour - startHour) }, (_, index) => {
+        const hour = (index + startHour).toString().padStart(2, '0');
 
-        for (let i = 6; i <= 23; i++) {
-            const h = i.toString().padStart(2, '0');
-            slots.push(`${h}:00`);
-        }
-
-        return slots;
-    };
+        return `${hour}:00`;
+    });
 
     const isSlotOccupied = (timeSlot: string) => {
         const slotStart = `${timeSlot}:00`;
-        const slotEnd = `${(parseInt(timeSlot.split(':')[0]) + 1).toString().padStart(2, '0')}:00:00`;
-        
-        return occupiedSlots.some(res => {
-            return res.start_time < slotEnd && res.end_time > slotStart;
+        const slotEnd = `${(parseInt(timeSlot.split(':')[0]) + 1)
+            .toString()
+            .padStart(2, '0')}:00:00`;
+
+        return occupiedSlots.some((reservation) => {
+            return (
+                reservation.start_time < slotEnd &&
+                reservation.end_time > slotStart
+            );
         });
     };
 
     const canExtend = () => {
         if (!startTime) {
-return false;
-}
-        
+            return false;
+        }
+
         const nextHour = parseInt(startTime.split(':')[0]) + durationHours;
 
-        if (nextHour > 24) {
-return false;
-}
-        
+        if (nextHour >= endHour) {
+            return false;
+        }
+
         const nextTimeSlot = `${nextHour.toString().padStart(2, '0')}:00`;
 
         return !isSlotOccupied(nextTimeSlot);
-    };
-
-    const handleSelectSlot = (time: string) => {
-        onChangeTime(time, 1); // Reset to 1 hour duration when picking a new slot
     };
 
     const format12h = (time24h: string) => {
@@ -98,68 +98,104 @@ return false;
         return format(dateObj, 'h:mm a');
     };
 
+    const selectedEndTime = startTime
+        ? format(addHours(parse(startTime, 'HH:mm', new Date()), durationHours), 'HH:mm')
+        : '';
+
     return (
-        <div className="space-y-4">
-            <Label className="text-base flex items-center justify-between">
-                <span>2. Selecciona la Hora</span>
-                {loading && <span className="text-xs text-muted-foreground animate-pulse">Cargando disponibilidad...</span>}
+        <div className="space-y-3">
+            <Label className="flex items-center justify-between gap-3 text-sm font-black text-slate-100">
+                <span>Horario disponible</span>
+                {loading && (
+                    <span className="text-xs font-medium text-slate-500">
+                        Cargando...
+                    </span>
+                )}
             </Label>
-            
+
             {date ? (
-                <div className="rounded-xl border bg-white p-4 shadow-sm dark:bg-neutral-900">
-                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                        {generateSlots().map((time) => {
+                <div className="rounded-lg border border-white/10 bg-slate-950/45 p-3">
+                    <div className="grid max-h-[268px] grid-cols-2 gap-2 overflow-y-auto pr-1 min-[420px]:grid-cols-3 sm:grid-cols-4 lg:grid-cols-6">
+                        {slots.map((time) => {
                             const occupied = isSlotOccupied(time);
                             const selected = startTime === time;
-                            
+
                             return (
                                 <Button
                                     key={time}
                                     type="button"
-                                    variant={selected ? "default" : occupied ? "secondary" : "outline"}
-                                    className={`h-10 text-xs ${selected ? 'bg-green-600 text-white hover:bg-green-700' : occupied ? 'opacity-40 line-through' : 'hover:border-green-500 hover:text-green-700'}`}
+                                    variant="outline"
+                                    className={`h-11 border text-xs font-black ${
+                                        selected
+                                            ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100 hover:bg-emerald-500/25'
+                                            : occupied
+                                              ? 'cursor-not-allowed border-white/5 bg-slate-900/60 text-slate-600 line-through opacity-60'
+                                              : 'border-white/10 bg-white/[0.03] text-slate-200 hover:border-emerald-400/40 hover:bg-emerald-500/10 hover:text-emerald-200'
+                                    }`}
                                     disabled={occupied}
-                                    onClick={() => handleSelectSlot(time)}
+                                    onClick={() => onChangeTime(time, 1)}
                                 >
                                     {format12h(time)}
                                 </Button>
                             );
                         })}
                     </div>
-                    
+
                     {startTime && (
-                        <div className="mt-6 border-t pt-4 space-y-3">
-                            <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                            <Label className="text-sm font-semibold text-slate-300">
                                 Duración de la reserva
                             </Label>
-                            <div className="flex items-center gap-4 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-lg border">
-                                <Clock className="h-5 w-5 text-green-600" />
-                                <div className="flex-1 font-medium text-sm">
-                                    {format12h(startTime)} — {format12h(`${(parseInt(startTime.split(':')[0]) + durationHours).toString().padStart(2, '0')}:00`)}
+                            <div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 sm:flex-row sm:items-center">
+                                <div className="flex min-w-0 flex-1 items-center gap-3">
+                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/12 text-emerald-300">
+                                        <Clock className="size-4" />
+                                    </span>
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-black text-slate-100">
+                                            {format12h(startTime)} -{' '}
+                                            {format12h(selectedEndTime)}
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            {durationHours}{' '}
+                                            {durationHours === 1 ? 'hora' : 'horas'}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <Button 
+
+                                <div className="grid grid-cols-[40px_1fr_40px] items-center gap-2 sm:w-44">
+                                    <Button
                                         type="button"
-                                        variant="outline" 
-                                        size="icon" 
-                                        className="h-8 w-8"
-                                        onClick={() => onChangeTime(startTime, Math.max(1, durationHours - 1))}
+                                        variant="outline"
+                                        size="icon"
+                                        className="size-10 border-white/10 bg-transparent text-slate-200 hover:bg-white/10"
+                                        onClick={() =>
+                                            onChangeTime(
+                                                startTime,
+                                                Math.max(1, durationHours - 1),
+                                            )
+                                        }
                                         disabled={durationHours <= 1}
                                     >
-                                        <Minus className="h-4 w-4" />
+                                        <Minus className="size-4" />
                                     </Button>
-                                    <span className="w-16 text-center text-sm font-medium">
-                                        {durationHours} {durationHours === 1 ? 'hora' : 'horas'}
+                                    <span className="text-center text-sm font-black text-slate-100">
+                                        {durationHours}h
                                     </span>
-                                    <Button 
+                                    <Button
                                         type="button"
-                                        variant="outline" 
-                                        size="icon" 
-                                        className="h-8 w-8"
-                                        onClick={() => onChangeTime(startTime, durationHours + 1)}
+                                        variant="outline"
+                                        size="icon"
+                                        className="size-10 border-white/10 bg-transparent text-slate-200 hover:bg-white/10"
+                                        onClick={() =>
+                                            onChangeTime(
+                                                startTime,
+                                                durationHours + 1,
+                                            )
+                                        }
                                         disabled={!canExtend()}
                                     >
-                                        <Plus className="h-4 w-4" />
+                                        <Plus className="size-4" />
                                     </Button>
                                 </div>
                             </div>
@@ -167,8 +203,8 @@ return false;
                     )}
                 </div>
             ) : (
-                <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-neutral-900">
-                    Selecciona una fecha primero para ver los horarios disponibles.
+                <div className="rounded-lg border border-dashed border-white/10 bg-slate-950/45 p-6 text-center text-sm text-slate-500">
+                    Selecciona una fecha para ver los horarios disponibles.
                 </div>
             )}
         </div>

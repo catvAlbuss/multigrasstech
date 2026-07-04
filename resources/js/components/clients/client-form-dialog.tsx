@@ -28,6 +28,14 @@ import type {
     TenantClientEdit,
 } from '@/types/tenant';
 
+function csrfToken() {
+    return (
+        document
+            .querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
+            ?.getAttribute('content') ?? ''
+    );
+}
+
 const EMPTY_FORM: ClientFormData = {
     name: '',
     email: '',
@@ -39,10 +47,11 @@ const EMPTY_FORM: ClientFormData = {
     is_active: true,
     image: null,
     remove_image: false,
+    _token: '',
 };
 
 function emptyForm(): ClientFormData {
-    return { ...EMPTY_FORM };
+    return { ...EMPTY_FORM, _token: csrfToken() };
 }
 
 function valuesFromClient(client: TenantClientEdit): ClientFormData {
@@ -57,6 +66,7 @@ function valuesFromClient(client: TenantClientEdit): ClientFormData {
         is_active: client.is_active,
         image: null,
         remove_image: false,
+        _token: csrfToken(),
     };
 }
 
@@ -88,7 +98,8 @@ export function ClientFormDialog({
         }
 
         form.clearErrors();
-        form.setData(client ? valuesFromClient(client) : emptyForm());
+        const formData = client ? valuesFromClient(client) : emptyForm();
+        form.setData({ ...formData, _token: csrfToken() });
         setResolvedClientId(client?.id ?? null);
         setLookupMessage(null);
         setImagePreview(client?.image_url ?? null);

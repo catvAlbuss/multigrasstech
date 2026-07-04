@@ -10,7 +10,7 @@ import { useRotatingIndex } from '@/hooks/use-rotating-index';
 import { useWelcomeCalendar } from '@/hooks/use-welcome-calendar';
 import { DEFAULT_HERO } from '@/lib/welcome';
 import { login } from '@/routes';
-import { create as createReservation } from '@/routes/reservations';
+import { index as reservationsIndex } from '@/routes/reservations';
 import { dashboard } from '@/routes/tenant';
 import type { WelcomePageProps } from '@/types/welcome';
 
@@ -22,7 +22,7 @@ export default function TenantWelcome() {
     const tenantName = tenant?.name ?? 'Nuestro Complejo';
     const dashboardHref = dashboard.url();
     const loginHref = login.url();
-    const primaryHref = isAuthenticated ? createReservation.url() : loginHref;
+    const primaryHref = isAuthenticated ? reservationsIndex.url() : loginHref;
     const heroSlider = useRotatingIndex(heroImages.length);
     const welcomeCalendar = useWelcomeCalendar(calendar);
     const showCalendar = profile?.show_calendar ?? true;
