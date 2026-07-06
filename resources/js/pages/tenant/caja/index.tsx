@@ -18,6 +18,7 @@ export default function CajaIndex({
     sales_today,
     expenses_today,
     staff,
+    clients,
     totals_today,
 }: Props) {
     const { flash } = usePage<{ flash: { success?: string; error?: string } }>().props;
@@ -150,6 +151,7 @@ export default function CajaIndex({
                     cart={cart}
                     igvApplied={igvApplied}
                     staff={staff}
+                    clients={clients}
                     onOpenChange={setCheckoutOpen}
                     onSuccess={handleCheckoutSuccess}
                 />

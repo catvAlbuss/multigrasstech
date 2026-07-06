@@ -9,6 +9,7 @@ use App\Models\Field;
 use App\Models\Reservation;
 use App\Models\TenantProfile;
 use App\Models\User;
+use App\Services\CajaReservationPaymentService;
 use App\Services\PeruDocumentLookupService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -41,25 +42,12 @@ class ReservationController extends Controller
             ->paginate(15)
             ->withQueryString();
 
-        $openPaymentReservation = null;
-        if ($request->filled('open_payment')) {
-            $openPaymentReservation = Reservation::with(['field:id,name', 'client:id,name,phone'])
-                ->where('tenant_id', tenant('id'))
-                ->find($request->integer('open_payment'));
-        }
-
-        $openPaymentIntent = in_array($request->query('payment_type'), ['advance', 'full'], true)
-            ? $request->query('payment_type')
-            : 'full';
-
         return Inertia::render('tenant/reservations/index', [
             'reservations' => $reservations,
             'fields' => Field::where('status', 'active')->orderBy('name')->get(['id', 'name', 'hourly_rate']),
             'clients' => Client::where('is_active', true)->orderBy('name')->get(['id', 'name', 'phone']),
             'staff' => User::where('tenant_id', tenant('id'))->orderBy('name')->get(['id', 'name']),
             'booking_hours' => $this->bookingHours(),
-            'open_payment_reservation' => $openPaymentReservation,
-            'open_payment_intent' => $openPaymentIntent,
             'filters' => [
                 'search' => $request->search ?? '',
                 'status' => $request->status ?? '',
@@ -84,7 +72,6 @@ class ReservationController extends Controller
             'amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
             'mark_as_paid' => ['nullable', 'boolean'],
-            'payment_type' => ['nullable', Rule::in(['advance', 'full'])],
         ]);
 
         $validated['client_id'] = $this->resolveClientId(
@@ -94,7 +81,6 @@ class ReservationController extends Controller
         );
 
         $markAsPaid = (bool) ($validated['mark_as_paid'] ?? false);
-        $paymentType = $validated['payment_type'] ?? null;
 
         $data = $this->normalizeReservationData(collect($validated)
             ->only(['field_id', 'client_id', 'date', 'start_time', 'end_time', 'status', 'amount', 'notes'])
@@ -109,21 +95,97 @@ class ReservationController extends Controller
             $data['payment_method'] = 'historico';
         }
 
-        $reservation = Reservation::create($data);
+        Reservation::create($data);
 
         if ($markAsPaid) {
             return redirect()->route('reservations.index')
                 ->with('success', 'Reserva histórica registrada correctamente.');
         }
 
-        // The reservation is created unpaid; the "Cobrar venta" dialog opens
-        // right after (see open_payment_reservation in index()) so the
-        // deposit/full payment is collected without leaving this page.
-        return redirect()->route('reservations.index', [
-            'date' => $data['date'],
-            'open_payment' => $reservation->id,
-            'payment_type' => $paymentType ?? 'full',
-        ])->with('success', 'Reservación creada correctamente.');
+        return redirect()->route('reservations.index', ['date' => $data['date']])
+            ->with('success', 'Reservación creada correctamente.');
+    }
+
+    /**
+     * Creates a reservation and immediately collects its deposit/full payment
+     * in one atomic step — used by the "Guardar y cobrar en caja" flow so a
+     * reservation only ever exists in the database once it's been paid (or
+     * explicitly marked historical via store()). Mirrors CajaController's
+     * reservationPayment() JSON contract so the same checkout dialog can post
+     * to either endpoint.
+     */
+    public function storeAndCharge(Request $request, CajaReservationPaymentService $paymentService): JsonResponse
+    {
+        abort_unless(
+            $request->user()->can('manage-reservations') && $request->user()->can('manage-caja'),
+            403
+        );
+
+        $validated = $request->validate([
+            'field_id' => ['required', Rule::exists('fields', 'id')->where('tenant_id', tenant('id'))],
+            'date' => ['required', 'date'],
+            'start_time' => ['required', 'date_format:H:i'],
+            'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
+            'status' => ['required', 'in:pending,confirmed,completed,cancelled'],
+            'amount' => ['required', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string'],
+            'payment_type' => ['required', Rule::in(['advance', 'full'])],
+            'document_type' => ['nullable', Rule::in(['boleta', 'factura'])],
+            'attended_by' => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', tenant('id'))],
+            'client_id' => ['nullable', Rule::exists('clients', 'id')->where('tenant_id', tenant('id'))],
+            'new_client_name' => ['nullable', 'string', 'max:120'],
+            'new_client_phone' => ['nullable', 'string', 'max:30'],
+            'new_client_document_type' => ['nullable', Rule::in(['dni', 'ruc'])],
+            'new_client_document_number' => ['nullable', 'string', 'max:20'],
+            'new_client_email' => ['nullable', 'email', 'max:120'],
+        ]);
+
+        $data = $this->normalizeReservationData(collect($validated)
+            ->only(['field_id', 'date', 'start_time', 'end_time', 'status', 'amount', 'notes'])
+            ->toArray());
+
+        $this->ensureWithinTenantBookingHours($data['start_time'], $data['end_time']);
+        $this->ensureNoOverlap($data['field_id'], $data['date'], $data['start_time'], $data['end_time']);
+
+        try {
+            $reservation = DB::transaction(function () use ($data, $validated, $paymentService) {
+                $reservation = Reservation::create($data);
+
+                $chargeAmount = $validated['payment_type'] === 'full'
+                    ? (float) $data['amount']
+                    : round((float) $data['amount'] * 0.5, 2);
+
+                $applied = $paymentService->register(
+                    $reservation,
+                    $validated['payment_type'],
+                    $chargeAmount,
+                    $validated['document_type'] ?? null,
+                    $validated['attended_by'] ?? null,
+                    $validated['client_id'] ?? null,
+                    $validated['new_client_name'] ?? null,
+                    $validated['new_client_phone'] ?? null,
+                    $validated['new_client_document_type'] ?? null,
+                    $validated['new_client_document_number'] ?? null,
+                    $validated['new_client_email'] ?? null,
+                );
+
+                if ($applied <= 0) {
+                    throw new \RuntimeException('No hay saldo pendiente por cobrar en esta reserva.');
+                }
+
+                return $reservation;
+            });
+        } catch (\RuntimeException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'reservation' => $reservation->fresh(['field', 'client']),
+        ]);
     }
 
     public function calendarSummary(Request $request): JsonResponse

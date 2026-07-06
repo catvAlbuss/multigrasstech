@@ -162,6 +162,49 @@ export type TenantReservation = {
     client?: TenantClientOption | null;
 };
 
+// A reservation not yet created in the database — gathered from the "Nueva
+// reserva" form and carried into the checkout wizard, which creates it and
+// records its payment together in one request (see ReservationController::
+// storeAndCharge).
+export type ReservationCheckoutDraft = {
+    field_id: number;
+    field_name?: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    status: string;
+    amount: number;
+    payment_type: 'advance' | 'full';
+};
+
+// Normalized output of <ClientPicker> — either an existing Client to reuse
+// as-is, or the data needed to create one (captured via DNI/RUC lookup or
+// typed manually) at the moment the checkout is submitted.
+export type ClientPickerValue =
+    | { mode: 'existing'; clientId: number; name: string; phone?: string | null }
+    | {
+          mode: 'new';
+          name: string;
+          phone: string;
+          documentType?: 'dni' | 'ruc';
+          documentNumber?: string;
+          email?: string;
+      };
+
+export type ReservationCheckoutSubject =
+    | { mode: 'existing'; reservation: TenantReservation; intent?: 'advance' | 'full' }
+    | { mode: 'draft'; draft: ReservationCheckoutDraft };
+
+// What was actually charged in a checkout submission — carried alongside the
+// updated TenantReservation so the receipt ticket can show the comprobante
+// type and amount paid in *this* transaction (the reservation itself only
+// tracks the cumulative advance_amount).
+export type ReservationChargeSummary = {
+    amount: number;
+    documentType: 'boleta' | 'factura';
+    attendantName?: string | null;
+};
+
 export type TenantTransaction = {
     id: number;
     type: 'income' | 'expense';
@@ -214,8 +257,6 @@ export type ReservationsIndexPageProps = {
     clients: TenantClientOption[];
     staff: { id: number; name: string }[];
     booking_hours?: { start: string; end: string };
-    open_payment_reservation?: TenantReservation | null;
-    open_payment_intent?: 'advance' | 'full';
     filters: { search: string; status: string; date: string };
 };
 

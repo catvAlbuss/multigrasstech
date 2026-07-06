@@ -31,10 +31,14 @@ import Swal from 'sweetalert2';
 import { ReservationCheckoutDialog } from '@/components/reservations/reservation-checkout-dialog';
 import { ReservationMonthView } from '@/components/reservations/reservation-month-view';
 import { ReservationQuickModal } from '@/components/reservations/reservation-quick-modal';
+import { ReservationReceiptDialog } from '@/components/reservations/reservation-receipt-dialog';
 import { ReservationWeekStrip } from '@/components/reservations/reservation-week-strip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type {
+    ReservationChargeSummary,
+    ReservationCheckoutDraft,
+    ReservationCheckoutSubject,
     ReservationsIndexPageProps as Props,
     TenantReservation as Reservation,
 } from '@/types/tenant';
@@ -161,57 +165,46 @@ export default function ReservationsIndex({
     clients,
     staff,
     booking_hours,
-    open_payment_reservation,
-    open_payment_intent,
     filters,
 }: Props) {
     const { flash } = usePage<{ flash: { success?: string; error?: string } }>().props;
     const searchRef = useRef<HTMLInputElement>(null);
     const [view, setView] = useState<CalendarView>('day');
     const [quickModal, setQuickModal] = useState<QuickModalState>({ open: false });
-    const [paymentDialog, setPaymentDialog] = useState<{
-        reservation: Reservation;
-        intent?: 'advance' | 'full';
-    } | null>(null);
-    // Tracks which open_payment id we've already reacted to, so the effect
-    // below only fires once per redirect instead of on every render.
-    const [handledPaymentId, setHandledPaymentId] = useState<number | null>(null);
+    const [paymentDialog, setPaymentDialog] = useState<ReservationCheckoutSubject | null>(null);
+    // Reflects a just-paid reservation immediately in the calendar/list
+    // instead of waiting on the round trip from router.reload() below;
+    // cleared once that reload actually lands and the server data takes over.
+    const [paidOverride, setPaidOverride] = useState<Reservation | null>(null);
+    const [syncedReservations, setSyncedReservations] = useState(reservations);
+    const [receipt, setReceipt] = useState<{ reservation: Reservation; charge: ReservationChargeSummary } | null>(
+        null,
+    );
+
+    if (reservations !== syncedReservations) {
+        setSyncedReservations(reservations);
+        setPaidOverride(null);
+    }
 
     function openQuickModal(state: Omit<QuickModalState, 'open'>) {
         setQuickModal({ open: true, ...state });
     }
 
     function openPaymentDialog(reservation: Reservation, intent?: 'advance' | 'full') {
-        setPaymentDialog({ reservation, intent });
+        setPaymentDialog({ mode: 'existing', reservation, intent });
     }
 
-    function handlePaymentSuccess(updated: Reservation) {
+    function openPaymentDialogForDraft(draft: ReservationCheckoutDraft) {
+        setPaymentDialog({ mode: 'draft', draft });
+    }
+
+    function handlePaymentSuccess(updated: Reservation, charge: ReservationChargeSummary) {
         toast.success('Cobro registrado correctamente.');
         setPaymentDialog(null);
+        setPaidOverride(updated);
+        setReceipt({ reservation: updated, charge });
         router.reload({ only: ['reservations'] });
-        void updated;
     }
-
-    // The reservation created via the quick modal redirects back here with
-    // open_payment=<id>, so the same "Cobrar venta" wizard used for sales
-    // pops up right away to collect the deposit/full payment. Adjusting
-    // state during render (rather than in an effect) is the pattern React
-    // recommends for state derived from a changed prop.
-    if (open_payment_reservation && open_payment_reservation.id !== handledPaymentId) {
-        setHandledPaymentId(open_payment_reservation.id);
-        setPaymentDialog({ reservation: open_payment_reservation, intent: open_payment_intent });
-    }
-
-    useEffect(() => {
-        if (!open_payment_reservation) {
-            return;
-        }
-
-        const url = new URL(window.location.href);
-        url.searchParams.delete('open_payment');
-        url.searchParams.delete('payment_type');
-        window.history.replaceState(window.history.state, '', url.toString());
-    }, [open_payment_reservation]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -223,7 +216,28 @@ toast.error(flash.error);
 }
     }, [flash]);
 
-    const reservationItems = reservations.data;
+    // The create-and-charge redirect from the quick modal tags the URL with
+    // open_payment/payment_type so the server can echo the reservation back;
+    // once handled client-side, strip them so they don't linger in the bar.
+    useEffect(() => {
+        const url = new URL(window.location.href);
+
+        if (!url.searchParams.has('open_payment')) {
+            return;
+        }
+
+        url.searchParams.delete('open_payment');
+        url.searchParams.delete('payment_type');
+        window.history.replaceState(window.history.state, '', url.toString());
+    }, []);
+
+    const reservationItems = useMemo(
+        () =>
+            paidOverride
+                ? reservations.data.map((item) => (item.id === paidOverride.id ? paidOverride : item))
+                : reservations.data,
+        [reservations.data, paidOverride],
+    );
     const selectedDate = filters.date || format(new Date(), 'yyyy-MM-dd');
     const scheduleFields = fields.slice(0, 4);
     const startHour = Number((booking_hours?.start ?? '06:00').slice(0, 2));
@@ -754,15 +768,15 @@ toast.error(flash.error);
                 defaultFieldId={quickModal.fieldId}
                 defaultDate={quickModal.date}
                 defaultStartTime={quickModal.startTime}
+                onSubmitForPayment={openPaymentDialogForDraft}
             />
 
             {paymentDialog && (
                 <ReservationCheckoutDialog
                     open={!!paymentDialog}
-                    reservation={paymentDialog.reservation}
+                    subject={paymentDialog}
                     clients={clients}
                     staff={staff}
-                    defaultPaymentType={paymentDialog.intent}
                     onOpenChange={(open) => {
                         if (!open) {
                             setPaymentDialog(null);
@@ -771,6 +785,17 @@ toast.error(flash.error);
                     onSuccess={handlePaymentSuccess}
                 />
             )}
+
+            <ReservationReceiptDialog
+                open={!!receipt}
+                reservation={receipt?.reservation ?? null}
+                charge={receipt?.charge ?? null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setReceipt(null);
+                    }
+                }}
+            />
         </>
     );
 }

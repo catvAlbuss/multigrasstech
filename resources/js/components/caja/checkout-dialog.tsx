@@ -14,6 +14,7 @@ import {
     UserCog,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { SearchableClientSelect } from '@/components/clients/searchable-client-select';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -24,6 +25,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type {
+    CajaClientOption,
     CajaStaffOption,
     CartItem,
     CheckoutFormData,
@@ -116,6 +118,7 @@ export function CheckoutDialog({
     cart,
     igvApplied,
     staff,
+    clients,
     onOpenChange,
     onSuccess,
 }: {
@@ -123,6 +126,7 @@ export function CheckoutDialog({
     cart: CartItem[];
     igvApplied: boolean;
     staff: CajaStaffOption[];
+    clients: CajaClientOption[];
     onOpenChange: (open: boolean) => void;
     onSuccess: (sale: SaleData) => void;
 }) {
@@ -133,6 +137,7 @@ export function CheckoutDialog({
         igv_applied: igvApplied,
         attended_by: auth.user.id,
     });
+    const [selectedClientId, setSelectedClientId] = useState('');
     const [lookingUp, setLookingUp] = useState(false);
     const [lookupMsg, setLookupMsg] = useState<{
         text: string;
@@ -140,6 +145,24 @@ export function CheckoutDialog({
     } | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    function handleSelectExistingClient(client: CajaClientOption | null) {
+        setSelectedClientId(client ? String(client.id) : '');
+
+        if (!client) {
+            return;
+        }
+
+        setField('customer_name', client.name);
+        setField('customer_email', client.email ?? '');
+
+        if (client.document_type === 'dni' || client.document_type === 'ruc') {
+            setField('customer_doc_type', client.document_type);
+            setField('customer_doc_number', client.document_number ?? '');
+        }
+
+        setLookupMsg({ text: `Cliente "${client.name}" cargado de tu lista.`, type: 'success' });
+    }
 
     const totals = useMemo(
         () => calcTotals(cart, form.igv_applied),
@@ -516,6 +539,16 @@ setStep(STEPS[idx - 1].key);
                             {/* ─── Step 2: Cliente ─── */}
                             {step === 'cliente' && (
                                 <div className="space-y-4">
+                                    <div className="grid gap-1.5">
+                                        <Label>Cliente frecuente</Label>
+                                        <SearchableClientSelect
+                                            clients={clients}
+                                            selectedId={selectedClientId}
+                                            onSelect={handleSelectExistingClient}
+                                            placeholder="Buscar por nombre o teléfono..."
+                                        />
+                                    </div>
+
                                     <div className="rounded-lg border border-green-100 bg-green-50/60 p-4 dark:border-green-900 dark:bg-green-950/30">
                                         <div className="mb-3 flex items-center gap-2 text-sm font-medium text-green-800 dark:text-green-300">
                                             <Search className="size-4" />{' '}

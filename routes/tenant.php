@@ -91,6 +91,7 @@ Route::middleware([
         Route::get('reservations/calendar-summary', [ReservationController::class, 'calendarSummary'])->name('reservations.calendar-summary');
         Route::patch('reservations/{reservation}/approve', [ReservationController::class, 'approve'])->name('reservations.approve');
         Route::patch('reservations/{reservation}/reject', [ReservationController::class, 'reject'])->name('reservations.reject');
+        Route::post('reservations/charge', [ReservationController::class, 'storeAndCharge'])->name('reservations.charge');
         Route::resource('reservations', ReservationController::class)->except(['show', 'create']);
 
         // --- Asistencia ---

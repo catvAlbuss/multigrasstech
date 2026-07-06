@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\Client;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Reservation;
@@ -61,11 +62,16 @@ class CajaController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
+        $clients = Client::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'phone', 'email', 'document_type', 'document_number']);
+
         return Inertia::render('tenant/caja/index', [
             'products' => $products,
             'sales_today' => $salesToday->values(),
             'expenses_today' => $expensesToday->values(),
             'staff' => $staff,
+            'clients' => $clients,
             'totals_today' => [
                 'income' => round($salesIncome + $manualIncome, 2),
                 'expense' => round($totalExpense, 2),
@@ -301,6 +307,9 @@ class CajaController extends Controller
             'client_id' => ['nullable', Rule::exists('clients', 'id')->where('tenant_id', tenant('id'))],
             'new_client_name' => ['nullable', 'string', 'max:120'],
             'new_client_phone' => ['nullable', 'string', 'max:30'],
+            'new_client_document_type' => ['nullable', Rule::in(['dni', 'ruc'])],
+            'new_client_document_number' => ['nullable', 'string', 'max:20'],
+            'new_client_email' => ['nullable', 'email', 'max:120'],
         ]);
 
         $reservation = Reservation::with(['field', 'client'])->findOrFail($data['reservation_id']);
@@ -314,6 +323,9 @@ class CajaController extends Controller
             $data['client_id'] ?? null,
             $data['new_client_name'] ?? null,
             $data['new_client_phone'] ?? null,
+            $data['new_client_document_type'] ?? null,
+            $data['new_client_document_number'] ?? null,
+            $data['new_client_email'] ?? null,
         );
 
         if ($amount <= 0) {

@@ -26,6 +26,9 @@ class CajaReservationPaymentService
         int|string|null $clientId = null,
         ?string $newClientName = null,
         ?string $newClientPhone = null,
+        ?string $newClientDocumentType = null,
+        ?string $newClientDocumentNumber = null,
+        ?string $newClientEmail = null,
     ): float {
         $reservationTotal = round((float) $reservation->amount, 2);
         $alreadyPaid = round((float) $reservation->advance_amount, 2);
@@ -39,7 +42,14 @@ class CajaReservationPaymentService
             return 0.0;
         }
 
-        $resolvedClientId = $this->resolveClientId($clientId, $newClientName, $newClientPhone);
+        $resolvedClientId = $this->resolveClientId(
+            $clientId,
+            $newClientName,
+            $newClientPhone,
+            $newClientDocumentType,
+            $newClientDocumentNumber,
+            $newClientEmail,
+        );
 
         DB::transaction(function () use ($reservation, $paymentType, $amount, $alreadyPaid, $reservationTotal, $documentType, $attendedBy, $resolvedClientId) {
             Transaction::create([
@@ -70,8 +80,14 @@ class CajaReservationPaymentService
         return $amount;
     }
 
-    public function resolveClientId(int|string|null $clientId, ?string $newClientName, ?string $newClientPhone): ?int
-    {
+    public function resolveClientId(
+        int|string|null $clientId,
+        ?string $newClientName,
+        ?string $newClientPhone,
+        ?string $newClientDocumentType = null,
+        ?string $newClientDocumentNumber = null,
+        ?string $newClientEmail = null,
+    ): ?int {
         if ($clientId) {
             return (int) $clientId;
         }
@@ -82,13 +98,22 @@ class CajaReservationPaymentService
 
         $client = null;
 
+        if ($newClientDocumentType && $newClientDocumentNumber) {
+            $client = Client::where('document_type', $newClientDocumentType)
+                ->where('document_number', $newClientDocumentNumber)
+                ->first();
+        }
+
         if ($newClientPhone) {
-            $client = Client::where('phone', $newClientPhone)->first();
+            $client ??= Client::where('phone', $newClientPhone)->first();
         }
 
         $client ??= Client::create([
             'name' => $newClientName,
             'phone' => $newClientPhone,
+            'email' => $newClientEmail,
+            'document_type' => $newClientDocumentType,
+            'document_number' => $newClientDocumentNumber,
             'is_active' => true,
         ]);
 

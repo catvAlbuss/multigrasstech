@@ -7,11 +7,10 @@ import {
     FileText,
     LoaderCircle,
     Receipt,
-    User,
     UserCog,
-    UserPlus,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ClientPicker } from '@/components/clients/client-picker';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -19,11 +18,16 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { csrfToken, fetchJson, formatMoney } from '@/lib/caja';
 import type { CajaStaffOption } from '@/types/caja';
-import type { TenantClientOption, TenantReservation } from '@/types/tenant';
+import type {
+    ClientPickerValue,
+    ReservationChargeSummary,
+    ReservationCheckoutSubject,
+    TenantClientOption,
+    TenantReservation,
+} from '@/types/tenant';
 
 type Step = 'comprobante' | 'cliente' | 'cobro';
 
@@ -35,37 +39,51 @@ const STEPS: { key: Step; label: string }[] = [
 
 export function ReservationCheckoutDialog({
     open,
-    reservation,
+    subject,
     clients,
     staff,
-    defaultPaymentType,
     onOpenChange,
     onSuccess,
 }: {
     open: boolean;
-    reservation: TenantReservation;
+    subject: ReservationCheckoutSubject;
     clients: TenantClientOption[];
     staff: CajaStaffOption[];
-    defaultPaymentType?: 'advance' | 'full';
     onOpenChange: (open: boolean) => void;
-    onSuccess: (reservation: TenantReservation) => void;
+    onSuccess: (reservation: TenantReservation, charge: ReservationChargeSummary) => void;
 }) {
     const { auth } = usePage<{ auth: { user: { id: number } } }>().props;
 
-    const total = Number(reservation.amount ?? 0);
-    const alreadyPaid = Number(reservation.advance_amount ?? 0);
+    const total =
+        subject.mode === 'existing' ? Number(subject.reservation.amount ?? 0) : subject.draft.amount;
+    const alreadyPaid =
+        subject.mode === 'existing' ? Number(subject.reservation.advance_amount ?? 0) : 0;
     const balance = Math.max(0, total - alreadyPaid);
     const hasPriorPayment = alreadyPaid > 0;
+    const defaultPaymentType =
+        subject.mode === 'existing' ? subject.intent : subject.draft.payment_type;
+
+    const fieldName =
+        (subject.mode === 'existing' ? subject.reservation.field?.name : subject.draft.field_name) ??
+        'Cancha';
+    const dateLabel = subject.mode === 'existing' ? subject.reservation.date : subject.draft.date;
+    const startTime =
+        subject.mode === 'existing' ? subject.reservation.start_time : subject.draft.start_time;
+    const endTime = subject.mode === 'existing' ? subject.reservation.end_time : subject.draft.end_time;
 
     const [step, setStep] = useState<Step>('comprobante');
     const [documentType, setDocumentType] = useState<'boleta' | 'factura'>('boleta');
     const [attendedBy, setAttendedBy] = useState<number>(auth.user.id);
-    const [clientId, setClientId] = useState<string>(
-        reservation.client?.id ? String(reservation.client.id) : '',
+    const [clientPickerValue, setClientPickerValue] = useState<ClientPickerValue | null>(
+        subject.mode === 'existing' && subject.reservation.client
+            ? {
+                  mode: 'existing',
+                  clientId: subject.reservation.client.id,
+                  name: subject.reservation.client.name,
+                  phone: subject.reservation.client.phone,
+              }
+            : null,
     );
-    const [addingNewClient, setAddingNewClient] = useState(false);
-    const [newClientName, setNewClientName] = useState('');
-    const [newClientPhone, setNewClientPhone] = useState('');
     const [paymentType, setPaymentType] = useState<'advance' | 'full'>(
         hasPriorPayment ? 'full' : (defaultPaymentType ?? 'advance'),
     );
@@ -82,7 +100,11 @@ export function ReservationCheckoutDialog({
 
     const stepIndex = STEPS.findIndex((s) => s.key === step);
     const canGoNext =
-        step === 'cliente' ? (addingNewClient ? newClientName.trim() !== '' : true) : true;
+        step === 'cliente'
+            ? clientPickerValue === null ||
+              clientPickerValue.mode === 'existing' ||
+              clientPickerValue.name.trim() !== ''
+            : true;
 
     function goNext() {
         const idx = STEPS.findIndex((s) => s.key === step);
@@ -110,23 +132,64 @@ export function ReservationCheckoutDialog({
         setSubmitting(true);
         setError(null);
 
-        const payload = {
-            reservation_id: reservation.id,
-            payment_type: paymentType,
-            amount: chargeAmount,
-            document_type: documentType,
-            attended_by: attendedBy,
-            client_id: addingNewClient ? null : clientId || null,
-            new_client_name: addingNewClient ? newClientName : null,
-            new_client_phone: addingNewClient ? newClientPhone || null : null,
-        };
+        const clientPayload =
+            clientPickerValue?.mode === 'existing'
+                ? {
+                      client_id: clientPickerValue.clientId,
+                      new_client_name: null,
+                      new_client_phone: null,
+                      new_client_document_type: null,
+                      new_client_document_number: null,
+                      new_client_email: null,
+                  }
+                : clientPickerValue?.mode === 'new'
+                  ? {
+                        client_id: null,
+                        new_client_name: clientPickerValue.name,
+                        new_client_phone: clientPickerValue.phone || null,
+                        new_client_document_type: clientPickerValue.documentType ?? null,
+                        new_client_document_number: clientPickerValue.documentNumber ?? null,
+                        new_client_email: clientPickerValue.email ?? null,
+                    }
+                  : {
+                        client_id: null,
+                        new_client_name: null,
+                        new_client_phone: null,
+                        new_client_document_type: null,
+                        new_client_document_number: null,
+                        new_client_email: null,
+                    };
+
+        const url = subject.mode === 'existing' ? '/caja/reservation-payment' : '/reservations/charge';
+        const payload =
+            subject.mode === 'existing'
+                ? {
+                      reservation_id: subject.reservation.id,
+                      payment_type: paymentType,
+                      amount: chargeAmount,
+                      document_type: documentType,
+                      attended_by: attendedBy,
+                      ...clientPayload,
+                  }
+                : {
+                      field_id: subject.draft.field_id,
+                      date: subject.draft.date,
+                      start_time: subject.draft.start_time,
+                      end_time: subject.draft.end_time,
+                      status: subject.draft.status,
+                      amount: subject.draft.amount,
+                      payment_type: paymentType,
+                      document_type: documentType,
+                      attended_by: attendedBy,
+                      ...clientPayload,
+                  };
 
         try {
             const data = await fetchJson<{
                 success: boolean;
                 reservation?: TenantReservation;
                 message?: string;
-            }>('/caja/reservation-payment', {
+            }>(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -141,7 +204,11 @@ export function ReservationCheckoutDialog({
                 return;
             }
 
-            onSuccess(data.reservation);
+            onSuccess(data.reservation, {
+                amount: chargeAmount,
+                documentType,
+                attendantName: staff.find((member) => member.id === attendedBy)?.name ?? null,
+            });
             onOpenChange(false);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Error de conexión. Intenta de nuevo.');
@@ -166,9 +233,8 @@ export function ReservationCheckoutDialog({
                             <span>
                                 Cobrar reserva
                                 <span className="mt-1 block text-sm font-normal text-muted-foreground">
-                                    {reservation.field?.name ?? 'Cancha'} · {reservation.date} ·{' '}
-                                    {reservation.start_time.slice(0, 5)}-
-                                    {reservation.end_time.slice(0, 5)}
+                                    {fieldName} · {dateLabel} · {startTime.slice(0, 5)}-
+                                    {endTime.slice(0, 5)}
                                 </span>
                             </span>
                         </DialogTitle>
@@ -285,53 +351,15 @@ export function ReservationCheckoutDialog({
                             {/* Step 2: Cliente */}
                             {step === 'cliente' && (
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                            ¿Quién hizo la reserva?
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={() => setAddingNewClient((v) => !v)}
-                                            className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-600 dark:text-green-400"
-                                        >
-                                            <UserPlus className="size-3.5" />
-                                            {addingNewClient ? 'Elegir existente' : 'Cliente nuevo'}
-                                        </button>
-                                    </div>
-
-                                    {addingNewClient ? (
-                                        <div className="grid gap-2 sm:grid-cols-2">
-                                            <Input
-                                                value={newClientName}
-                                                onChange={(e) => setNewClientName(e.target.value)}
-                                                placeholder="Nombre"
-                                                className="focus-visible:ring-green-500"
-                                            />
-                                            <Input
-                                                value={newClientPhone}
-                                                onChange={(e) => setNewClientPhone(e.target.value)}
-                                                placeholder="Teléfono"
-                                                className="focus-visible:ring-green-500"
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="relative">
-                                            <User className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                                            <select
-                                                value={clientId}
-                                                onChange={(e) => setClientId(e.target.value)}
-                                                className="h-10 w-full rounded-md border border-input bg-transparent pl-9 text-sm focus-visible:ring-1 focus-visible:ring-green-500 focus-visible:outline-none dark:bg-input/30"
-                                            >
-                                                <option value="">Sin cliente asignado</option>
-                                                {clients.map((client) => (
-                                                    <option key={client.id} value={client.id}>
-                                                        {client.name}
-                                                        {client.phone ? ` - ${client.phone}` : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
+                                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                        ¿Quién hizo la reserva?
+                                    </p>
+                                    <ClientPicker
+                                        clients={clients}
+                                        documentType={documentType === 'boleta' ? 'dni' : 'ruc'}
+                                        value={clientPickerValue}
+                                        onChange={setClientPickerValue}
+                                    />
                                 </div>
                             )}
 
@@ -408,10 +436,7 @@ export function ReservationCheckoutDialog({
                                 <div className="flex justify-between text-muted-foreground">
                                     <span>Cliente</span>
                                     <span className="max-w-[110px] truncate text-right font-medium">
-                                        {addingNewClient
-                                            ? newClientName || 'Cliente nuevo'
-                                            : (clients.find((c) => String(c.id) === clientId)?.name ??
-                                              'Sin cliente')}
+                                        {clientPickerValue?.name || 'Sin cliente'}
                                     </span>
                                 </div>
                                 <div className="flex justify-between text-muted-foreground">

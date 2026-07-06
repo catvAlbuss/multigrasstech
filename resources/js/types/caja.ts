@@ -80,6 +80,15 @@ export type CajaStaffOption = {
     name: string;
 };
 
+export type CajaClientOption = {
+    id: number;
+    name: string;
+    phone: string | null;
+    email: string | null;
+    document_type: string | null;
+    document_number: string | null;
+};
+
 export type CajaExpenseTransaction = {
     id: number;
     type: 'expense';
@@ -104,6 +113,7 @@ export type CajaIndexPageProps = {
     sales_today: CajaSaleToday[];
     expenses_today: CajaExpenseTransaction[];
     staff: CajaStaffOption[];
+    clients: CajaClientOption[];
     totals_today: {
         income: number;
         expense: number;

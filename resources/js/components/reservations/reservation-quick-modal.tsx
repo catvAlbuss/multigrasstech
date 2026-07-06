@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import type {
     TenantClientOption as ClientOption,
     TenantFieldOption as FieldOption,
+    ReservationCheckoutDraft,
 } from '@/types/tenant';
 
 function money(value: string | number | null | undefined) {
@@ -50,6 +51,7 @@ interface ReservationQuickModalProps {
     defaultFieldId?: number | null;
     defaultDate?: string;
     defaultStartTime?: string;
+    onSubmitForPayment?: (draft: ReservationCheckoutDraft) => void;
 }
 
 export function ReservationQuickModal({
@@ -61,6 +63,7 @@ export function ReservationQuickModal({
     defaultFieldId,
     defaultDate,
     defaultStartTime,
+    onSubmitForPayment,
 }: ReservationQuickModalProps) {
     const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
         field_id: '' as number | string,
@@ -122,15 +125,29 @@ export function ReservationQuickModal({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedField, durationMinutes, amountEdited]);
 
-    function handleTimeChange(start: string, minutes: number) {
-        setDurationMinutes(minutes);
-        const [h, m] = start.split(':').map(Number);
-        const endTotal = h * 60 + m + minutes;
+    // end_time must always be derived from start_time + duration, not just set
+    // reactively on user interaction — otherwise a pre-filled defaultStartTime
+    // (e.g. clicking a calendar slot) shows the right range in the time field
+    // but leaves end_time empty until the user touches the picker again,
+    // failing the "hora de fin" required validation on submit.
+    useEffect(() => {
+        if (!data.start_time) {
+            return;
+        }
+
+        const [h, m] = data.start_time.split(':').map(Number);
+        const endTotal = h * 60 + m + durationMinutes;
         const endTime = `${Math.floor(endTotal / 60)
             .toString()
             .padStart(2, '0')}:${(endTotal % 60).toString().padStart(2, '0')}`;
 
-        setData((current) => ({ ...current, start_time: start, end_time: endTime }));
+        setData((current) => (current.end_time === endTime ? current : { ...current, end_time: endTime }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data.start_time, durationMinutes]);
+
+    function handleTimeChange(start: string, minutes: number) {
+        setDurationMinutes(minutes);
+        setData('start_time', start);
     }
 
     const isPastDate = data.date ? isBefore(parseISO(data.date), startOfDay(new Date())) : false;
@@ -164,12 +181,32 @@ export function ReservationQuickModal({
     function handleSubmit(e: FormEvent) {
         e.preventDefault();
 
-        post('/reservations', {
-            onSuccess: () => {
-                onOpenChange(false);
-                reset();
-            },
+        if (data.mark_as_paid) {
+            post('/reservations', {
+                onSuccess: () => {
+                    onOpenChange(false);
+                    reset();
+                },
+            });
+
+            return;
+        }
+
+        // Nothing is saved yet — the checkout wizard collects comprobante/
+        // cliente/cobro and only then creates the reservation together with
+        // its payment in one request (see ReservationController::storeAndCharge).
+        onOpenChange(false);
+        onSubmitForPayment?.({
+            field_id: Number(data.field_id),
+            field_name: selectedField?.name,
+            date: data.date,
+            start_time: data.start_time,
+            end_time: data.end_time,
+            status: data.status,
+            amount: Number(data.amount),
+            payment_type: data.payment_type,
         });
+        reset();
     }
 
     return (
