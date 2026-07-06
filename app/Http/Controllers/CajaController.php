@@ -10,6 +10,8 @@ use App\Models\Reservation;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Transaction;
+use App\Models\User;
+use App\Services\CajaReservationPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -55,23 +57,15 @@ class CajaController extends Controller
             ->sum('amount');
         $totalExpense = (float) $expensesToday->sum('amount');
 
-        $pendingReservation = null;
-        if ($request->filled('reservation_id')) {
-            $pendingReservation = Reservation::with(['field:id,name', 'client:id,name,phone'])
-                ->where('tenant_id', tenant('id'))
-                ->find($request->integer('reservation_id'));
-        }
-
-        $pendingReservationIntent = in_array($request->query('payment_type'), ['advance', 'full'], true)
-            ? $request->query('payment_type')
-            : null;
+        $staff = User::where('tenant_id', tenant('id'))
+            ->orderBy('name')
+            ->get(['id', 'name']);
 
         return Inertia::render('tenant/caja/index', [
             'products' => $products,
             'sales_today' => $salesToday->values(),
             'expenses_today' => $expensesToday->values(),
-            'pending_reservation' => $pendingReservation,
-            'pending_reservation_intent' => $pendingReservationIntent,
+            'staff' => $staff,
             'totals_today' => [
                 'income' => round($salesIncome + $manualIncome, 2),
                 'expense' => round($totalExpense, 2),
@@ -96,6 +90,7 @@ class CajaController extends Controller
             'customer_name' => ['required', 'string', 'max:255'],
             'customer_address' => ['nullable', 'string', 'max:500'],
             'customer_email' => ['nullable', 'email', 'max:255'],
+            'attended_by' => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', tenant('id'))],
             'igv_applied' => ['required', 'boolean'],
             'payment_amount' => ['required', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
@@ -153,7 +148,9 @@ class CajaController extends Controller
             }
         }
 
-        $sale = DB::transaction(function () use ($data, $products, $variants) {
+        $attendedBy = $data['attended_by'] ?? $request->user()->id;
+
+        $sale = DB::transaction(function () use ($data, $products, $variants, $attendedBy) {
             $igvApplied = (bool) $data['igv_applied'];
 
             // Generate correlative sale number (locked to avoid race conditions)
@@ -229,6 +226,7 @@ class CajaController extends Controller
                 'customer_name' => $data['customer_name'],
                 'customer_address' => $data['customer_address'] ?? null,
                 'customer_email' => $data['customer_email'] ?? null,
+                'attended_by' => $attendedBy,
                 'igv_applied' => $igvApplied,
                 'subtotal' => $totalSubtotal,
                 'igv_amount' => $totalIgv,
@@ -250,7 +248,7 @@ class CajaController extends Controller
                 }
             }
 
-            return $sale->load('items');
+            return $sale->load('items', 'attendant');
         });
 
         return response()->json([
@@ -285,7 +283,12 @@ class CajaController extends Controller
         return back()->with('success', 'Salida registrada correctamente.');
     }
 
-    public function reservationPayment(Request $request): RedirectResponse
+    /**
+     * Collects a reservation deposit/balance through the same "Cobrar venta"
+     * wizard used for product sales. Returns JSON so the dialog can show a
+     * confirmation without leaving the Reservations page.
+     */
+    public function reservationPayment(Request $request, CajaReservationPaymentService $paymentService): JsonResponse
     {
         abort_unless($request->user()->can('manage-caja'), 403);
 
@@ -293,44 +296,37 @@ class CajaController extends Controller
             'reservation_id' => ['required', Rule::exists('reservations', 'id')->where('tenant_id', tenant('id'))],
             'payment_type' => ['required', Rule::in(['advance', 'full'])],
             'amount' => ['required', 'numeric', 'min:0.01'],
+            'document_type' => ['nullable', Rule::in(['boleta', 'factura'])],
+            'attended_by' => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', tenant('id'))],
+            'client_id' => ['nullable', Rule::exists('clients', 'id')->where('tenant_id', tenant('id'))],
+            'new_client_name' => ['nullable', 'string', 'max:120'],
+            'new_client_phone' => ['nullable', 'string', 'max:30'],
         ]);
 
         $reservation = Reservation::with(['field', 'client'])->findOrFail($data['reservation_id']);
-        $reservationTotal = round((float) $reservation->amount, 2);
-        $alreadyPaid = round((float) $reservation->advance_amount, 2);
-        $pendingAmount = max(0, round($reservationTotal - $alreadyPaid, 2));
-        $amount = $data['payment_type'] === 'full'
-            ? $pendingAmount
-            : min(round((float) $data['amount'], 2), $pendingAmount);
+
+        $amount = $paymentService->register(
+            $reservation,
+            $data['payment_type'],
+            (float) $data['amount'],
+            $data['document_type'] ?? null,
+            $data['attended_by'] ?? null,
+            $data['client_id'] ?? null,
+            $data['new_client_name'] ?? null,
+            $data['new_client_phone'] ?? null,
+        );
 
         if ($amount <= 0) {
-            return back()->with('error', 'La reserva no tiene saldo pendiente por cobrar.');
+            return response()->json([
+                'success' => false,
+                'message' => 'La reserva no tiene saldo pendiente por cobrar.',
+            ], 422);
         }
 
-        DB::transaction(function () use ($reservation, $data, $amount, $alreadyPaid, $reservationTotal) {
-            Transaction::create([
-                'type' => 'income',
-                'category' => 'reserva',
-                'description' => sprintf(
-                    'Cobro de reserva %s - %s',
-                    $reservation->code,
-                    $reservation->field?->name ?? 'Cancha'
-                ),
-                'amount' => $amount,
-                'date' => now()->toDateString(),
-                'reservation_id' => $reservation->id,
-                'notes' => $data['payment_type'] === 'full' ? 'Pago completo en caja.' : 'Adelanto en caja.',
-            ]);
-
-            $newPaidAmount = min($reservationTotal, round($alreadyPaid + $amount, 2));
-            $reservation->forceFill([
-                'advance_amount' => $newPaidAmount,
-                'payment_method' => 'caja',
-                'status' => $newPaidAmount >= $reservationTotal ? 'confirmed' : $reservation->status,
-            ])->save();
-        });
-
-        return redirect()->route('caja.index', ['reservation_id' => $reservation->id])
-            ->with('success', 'Cobro de reserva registrado correctamente.');
+        return response()->json([
+            'success' => true,
+            'reservation' => $reservation->fresh(['field', 'client']),
+            'amount' => $amount,
+        ]);
     }
 }

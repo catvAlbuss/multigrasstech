@@ -1,3 +1,4 @@
+import { usePage } from '@inertiajs/react';
 import {
     AlertCircle,
     BadgeCheck,
@@ -10,6 +11,7 @@ import {
     Receipt,
     Search,
     User,
+    UserCog,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type {
+    CajaStaffOption,
     CartItem,
     CheckoutFormData,
     SaleData,
@@ -56,7 +59,7 @@ function calcTotals(cart: CartItem[], igvApplied: boolean) {
     };
 }
 
-const EMPTY_FORM: CheckoutFormData = {
+const EMPTY_FORM: Omit<CheckoutFormData, 'attended_by'> = {
     document_type: 'boleta',
     customer_doc_type: 'sin_documento',
     customer_doc_number: '',
@@ -112,19 +115,23 @@ export function CheckoutDialog({
     open,
     cart,
     igvApplied,
+    staff,
     onOpenChange,
     onSuccess,
 }: {
     open: boolean;
     cart: CartItem[];
     igvApplied: boolean;
+    staff: CajaStaffOption[];
     onOpenChange: (open: boolean) => void;
     onSuccess: (sale: SaleData) => void;
 }) {
+    const { auth } = usePage<{ auth: { user: { id: number } } }>().props;
     const [step, setStep] = useState<Step>('comprobante');
     const [form, setForm] = useState<CheckoutFormData>({
         ...EMPTY_FORM,
         igv_applied: igvApplied,
+        attended_by: auth.user.id,
     });
     const [lookingUp, setLookingUp] = useState(false);
     const [lookupMsg, setLookupMsg] = useState<{
@@ -273,6 +280,7 @@ setField('customer_address', c.metadata.address);
             customer_name: form.customer_name || 'CONSUMIDOR FINAL',
             customer_address: form.customer_address || null,
             customer_email: form.customer_email || null,
+            attended_by: form.attended_by || null,
             igv_applied: form.igv_applied,
             payment_amount: paymentNum,
             notes: form.notes || null,
@@ -475,6 +483,32 @@ setStep(STEPS[idx - 1].key);
                                                 </button>
                                             ),
                                         )}
+                                    </div>
+
+                                    <div className="grid gap-1.5">
+                                        <Label htmlFor="co-attendant">
+                                            Atendido por
+                                        </Label>
+                                        <div className="relative">
+                                            <UserCog className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                                            <select
+                                                id="co-attendant"
+                                                value={form.attended_by}
+                                                onChange={(e) =>
+                                                    setField(
+                                                        'attended_by',
+                                                        e.target.value ? Number(e.target.value) : '',
+                                                    )
+                                                }
+                                                className="h-10 w-full rounded-md border border-input bg-transparent pl-9 text-sm focus-visible:ring-1 focus-visible:ring-green-500 focus-visible:outline-none dark:bg-input/30"
+                                            >
+                                                {staff.map((member) => (
+                                                    <option key={member.id} value={member.id}>
+                                                        {member.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -885,6 +919,12 @@ setStep(STEPS[idx - 1].key);
                                     <span>Cliente</span>
                                     <span className="max-w-[80px] truncate text-right font-medium">
                                         {form.customer_name || '—'}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between text-muted-foreground">
+                                    <span>Atendió</span>
+                                    <span className="max-w-[80px] truncate text-right font-medium">
+                                        {staff.find((member) => member.id === form.attended_by)?.name ?? '—'}
                                     </span>
                                 </div>
                             </div>

@@ -212,7 +212,10 @@ export type ReservationsIndexPageProps = {
     reservations: Paginated<TenantReservation>;
     fields: TenantFieldOption[];
     clients: TenantClientOption[];
+    staff: { id: number; name: string }[];
     booking_hours?: { start: string; end: string };
+    open_payment_reservation?: TenantReservation | null;
+    open_payment_intent?: 'advance' | 'full';
     filters: { search: string; status: string; date: string };
 };
 

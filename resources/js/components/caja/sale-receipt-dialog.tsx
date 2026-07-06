@@ -180,6 +180,16 @@ return null;
                                 )}
                             </div>
 
+                            {/* Attendant */}
+                            {sale.attendant && (
+                                <div className="border-t border-dashed border-gray-400 pt-2 mb-2 text-[10px]">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-500 uppercase">Atendido por</span>
+                                        <span className="font-medium">{sale.attendant.name}</span>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Footer */}
                             <div className="border-t border-dashed border-gray-400 pt-2 text-center text-[10px] text-gray-500">
                                 <p>¡Gracias por su compra!</p>

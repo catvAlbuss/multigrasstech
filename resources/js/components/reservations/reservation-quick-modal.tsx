@@ -223,10 +223,10 @@ export function ReservationQuickModal({
                         </div>
                     </div>
 
-                    <div className="space-y-1.5">
+                    {/* <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
                             <Label className="text-xs font-black uppercase tracking-wide text-slate-400">
-                                Cliente
+                                Cliente <span className="font-normal normal-case text-slate-500">(se asigna en caja)</span>
                             </Label>
                             <button
                                 type="button"
@@ -270,7 +270,7 @@ export function ReservationQuickModal({
                         )}
                         <InputError message={errors.client_id} />
                         <InputError message={errors.new_client_name} />
-                    </div>
+                    </div> */}
 
                     <ReservationTimeField
                         fieldId={data.field_id ? Number(data.field_id) : null}
@@ -390,7 +390,7 @@ export function ReservationQuickModal({
                             Resumen
                         </div>
                         <div className="space-y-1 text-sm">
-                            <div className="flex items-center justify-between gap-2">
+                            {/* <div className="flex items-center justify-between gap-2">
                                 <span className="inline-flex items-center gap-1.5 text-slate-400">
                                     <User className="size-3.5" />
                                     Cliente
@@ -400,7 +400,7 @@ export function ReservationQuickModal({
                                         ? data.new_client_name || 'Cliente nuevo'
                                         : (selectedClient?.name ?? 'Sin cliente')}
                                 </span>
-                            </div>
+                            </div> */}
                             <div className="flex items-center justify-between gap-2">
                                 <span className="inline-flex items-center gap-1.5 text-slate-400">
                                     <Check className="size-3.5" />
@@ -412,10 +412,18 @@ export function ReservationQuickModal({
                             </div>
                             <div className="flex items-center justify-between border-t border-white/10 pt-2">
                                 <span className="font-black text-emerald-300">
-                                    {data.mark_as_paid ? 'Total (ya pagado)' : 'Monto listo para caja'}
+                                    {data.mark_as_paid
+                                        ? 'Total (ya pagado)'
+                                        : data.payment_type === 'advance'
+                                          ? 'Adelanto listo para caja (50%)'
+                                          : 'Monto listo para caja'}
                                 </span>
                                 <span className="text-lg font-black text-emerald-300">
-                                    {money(data.amount)}
+                                    {money(
+                                        data.mark_as_paid || data.payment_type === 'full'
+                                            ? data.amount
+                                            : Number(data.amount || 0) * 0.5,
+                                    )}
                                 </span>
                             </div>
                         </div>

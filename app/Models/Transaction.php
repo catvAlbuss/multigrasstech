@@ -16,10 +16,12 @@ class Transaction extends Model
         'tenant_id',
         'type',
         'category',
+        'document_type',
         'description',
         'amount',
         'date',
         'reservation_id',
+        'attended_by',
         'notes',
     ];
 
@@ -31,5 +33,10 @@ class Transaction extends Model
     public function reservation(): BelongsTo
     {
         return $this->belongsTo(Reservation::class);
+    }
+
+    public function attendant(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'attended_by');
     }
 }

@@ -1,4 +1,4 @@
-import type { ProductVariant, TenantReservation } from './tenant';
+import type { ProductVariant } from './tenant';
 
 export type CajaProduct = {
     id: number;
@@ -49,6 +49,8 @@ export type SaleData = {
     customer_name: string;
     customer_address: string | null;
     customer_email: string | null;
+    attended_by: number | null;
+    attendant?: { id: number; name: string } | null;
     igv_applied: boolean;
     subtotal: number;
     igv_amount: number;
@@ -67,9 +69,15 @@ export type CheckoutFormData = {
     customer_name: string;
     customer_address: string;
     customer_email: string;
+    attended_by: number | '';
     igv_applied: boolean;
     payment_amount: string;
     notes: string;
+};
+
+export type CajaStaffOption = {
+    id: number;
+    name: string;
 };
 
 export type CajaExpenseTransaction = {
@@ -95,8 +103,7 @@ export type CajaIndexPageProps = {
     products: CajaProduct[];
     sales_today: CajaSaleToday[];
     expenses_today: CajaExpenseTransaction[];
-    pending_reservation?: TenantReservation | null;
-    pending_reservation_intent?: 'advance' | 'full' | null;
+    staff: CajaStaffOption[];
     totals_today: {
         income: number;
         expense: number;

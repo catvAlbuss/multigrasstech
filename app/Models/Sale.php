@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Sale extends Model
@@ -21,6 +22,7 @@ class Sale extends Model
         'customer_name',
         'customer_address',
         'customer_email',
+        'attended_by',
         'igv_applied',
         'subtotal',
         'igv_amount',
@@ -33,17 +35,22 @@ class Sale extends Model
     ];
 
     protected $casts = [
-        'igv_applied'    => 'boolean',
-        'subtotal'       => 'decimal:2',
-        'igv_amount'     => 'decimal:2',
-        'total'          => 'decimal:2',
+        'igv_applied' => 'boolean',
+        'subtotal' => 'decimal:2',
+        'igv_amount' => 'decimal:2',
+        'total' => 'decimal:2',
         'payment_amount' => 'decimal:2',
-        'change_amount'  => 'decimal:2',
-        'sold_at'        => 'datetime',
+        'change_amount' => 'decimal:2',
+        'sold_at' => 'datetime',
     ];
 
     public function items(): HasMany
     {
         return $this->hasMany(SaleItem::class);
+    }
+
+    public function attendant(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'attended_by');
     }
 }

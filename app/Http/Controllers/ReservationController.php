@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\Field;
 use App\Models\Reservation;
 use App\Models\TenantProfile;
+use App\Models\User;
 use App\Services\PeruDocumentLookupService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -40,11 +41,25 @@ class ReservationController extends Controller
             ->paginate(15)
             ->withQueryString();
 
+        $openPaymentReservation = null;
+        if ($request->filled('open_payment')) {
+            $openPaymentReservation = Reservation::with(['field:id,name', 'client:id,name,phone'])
+                ->where('tenant_id', tenant('id'))
+                ->find($request->integer('open_payment'));
+        }
+
+        $openPaymentIntent = in_array($request->query('payment_type'), ['advance', 'full'], true)
+            ? $request->query('payment_type')
+            : 'full';
+
         return Inertia::render('tenant/reservations/index', [
             'reservations' => $reservations,
             'fields' => Field::where('status', 'active')->orderBy('name')->get(['id', 'name', 'hourly_rate']),
             'clients' => Client::where('is_active', true)->orderBy('name')->get(['id', 'name', 'phone']),
+            'staff' => User::where('tenant_id', tenant('id'))->orderBy('name')->get(['id', 'name']),
             'booking_hours' => $this->bookingHours(),
+            'open_payment_reservation' => $openPaymentReservation,
+            'open_payment_intent' => $openPaymentIntent,
             'filters' => [
                 'search' => $request->search ?? '',
                 'status' => $request->status ?? '',
@@ -72,21 +87,11 @@ class ReservationController extends Controller
             'payment_type' => ['nullable', Rule::in(['advance', 'full'])],
         ]);
 
-        if (empty($validated['client_id']) && ! empty($validated['new_client_name'])) {
-            $client = null;
-
-            if (! empty($validated['new_client_phone'])) {
-                $client = Client::where('phone', $validated['new_client_phone'])->first();
-            }
-
-            $client ??= Client::create([
-                'name' => $validated['new_client_name'],
-                'phone' => $validated['new_client_phone'] ?? null,
-                'is_active' => true,
-            ]);
-
-            $validated['client_id'] = $client->id;
-        }
+        $validated['client_id'] = $this->resolveClientId(
+            $validated['client_id'] ?? null,
+            $validated['new_client_name'] ?? null,
+            $validated['new_client_phone'] ?? null,
+        );
 
         $markAsPaid = (bool) ($validated['mark_as_paid'] ?? false);
         $paymentType = $validated['payment_type'] ?? null;
@@ -111,9 +116,13 @@ class ReservationController extends Controller
                 ->with('success', 'Reserva histórica registrada correctamente.');
         }
 
-        return redirect()->route('caja.index', [
-            'reservation_id' => $reservation->id,
-            'payment_type' => $paymentType,
+        // The reservation is created unpaid; the "Cobrar venta" dialog opens
+        // right after (see open_payment_reservation in index()) so the
+        // deposit/full payment is collected without leaving this page.
+        return redirect()->route('reservations.index', [
+            'date' => $data['date'],
+            'open_payment' => $reservation->id,
+            'payment_type' => $paymentType ?? 'full',
         ])->with('success', 'Reservación creada correctamente.');
     }
 
@@ -478,6 +487,31 @@ class ReservationController extends Controller
         $reservation->update(['status' => 'cancelled']);
 
         return back()->with('success', 'Reserva rechazada correctamente.');
+    }
+
+    private function resolveClientId(int|string|null $clientId, ?string $newClientName, ?string $newClientPhone): ?int
+    {
+        if ($clientId) {
+            return (int) $clientId;
+        }
+
+        if (! $newClientName) {
+            return null;
+        }
+
+        $client = null;
+
+        if ($newClientPhone) {
+            $client = Client::where('phone', $newClientPhone)->first();
+        }
+
+        $client ??= Client::create([
+            'name' => $newClientName,
+            'phone' => $newClientPhone,
+            'is_active' => true,
+        ]);
+
+        return $client->id;
     }
 
     public function destroy(Request $request, Reservation $reservation): RedirectResponse

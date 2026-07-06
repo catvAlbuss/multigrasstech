@@ -28,6 +28,7 @@ import {
 import type {ElementType, FormEvent, ReactNode} from 'react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+import { ReservationCheckoutDialog } from '@/components/reservations/reservation-checkout-dialog';
 import { ReservationMonthView } from '@/components/reservations/reservation-month-view';
 import { ReservationQuickModal } from '@/components/reservations/reservation-quick-modal';
 import { ReservationWeekStrip } from '@/components/reservations/reservation-week-strip';
@@ -93,8 +94,17 @@ function ReservationStatus({ status }: { status: string }) {
 }
 
 function FieldMarker({ reservation }: { reservation: Reservation }) {
-    const style =
-        reservation.status === 'pending'
+    const total = Number(reservation.amount ?? 0);
+    const paid = Number(reservation.advance_amount ?? 0);
+    const balance = Math.max(0, total - paid);
+    const awaitingBalance = reservation.status !== 'cancelled' && balance > 0;
+    const overdue = awaitingBalance && isReservationOverdue(reservation);
+
+    const style = overdue
+        ? 'border-red-400/50 bg-red-500/20 text-red-100'
+        : awaitingBalance
+          ? 'border-orange-400/50 bg-orange-500/20 text-orange-100'
+          : reservation.status === 'pending'
             ? 'border-amber-400/40 bg-amber-500/20 text-amber-100'
             : reservation.status === 'cancelled'
               ? 'border-red-400/40 bg-red-500/20 text-red-100'
@@ -104,13 +114,21 @@ function FieldMarker({ reservation }: { reservation: Reservation }) {
 
     return (
         <div className={`rounded-md border px-2 py-1.5 text-[11px] ${style}`}>
-            <p className="font-black">
-                {reservation.start_time.slice(0, 5)} -{' '}
-                {reservation.end_time.slice(0, 5)}
-            </p>
+            <div className="flex items-center justify-between gap-1">
+                <p className="font-black">
+                    {reservation.start_time.slice(0, 5)} -{' '}
+                    {reservation.end_time.slice(0, 5)}
+                </p>
+                {awaitingBalance && <PendingPulse overdue={overdue} />}
+            </div>
             <p className="truncate text-[10px] opacity-85">
                 {reservation.client?.name ?? reservation.code}
             </p>
+            {awaitingBalance && (
+                <p className={`mt-0.5 truncate text-[9px] font-black ${overdue ? 'text-red-200' : 'text-orange-200'}`}>
+                    {overdue ? '¡Cobrar ahora! ' : ''}Falta {money(balance)}
+                </p>
+            )}
         </div>
     );
 }
@@ -137,15 +155,63 @@ function SummaryRow({
     );
 }
 
-export default function ReservationsIndex({ reservations, fields, clients, booking_hours, filters }: Props) {
+export default function ReservationsIndex({
+    reservations,
+    fields,
+    clients,
+    staff,
+    booking_hours,
+    open_payment_reservation,
+    open_payment_intent,
+    filters,
+}: Props) {
     const { flash } = usePage<{ flash: { success?: string; error?: string } }>().props;
     const searchRef = useRef<HTMLInputElement>(null);
     const [view, setView] = useState<CalendarView>('day');
     const [quickModal, setQuickModal] = useState<QuickModalState>({ open: false });
+    const [paymentDialog, setPaymentDialog] = useState<{
+        reservation: Reservation;
+        intent?: 'advance' | 'full';
+    } | null>(null);
+    // Tracks which open_payment id we've already reacted to, so the effect
+    // below only fires once per redirect instead of on every render.
+    const [handledPaymentId, setHandledPaymentId] = useState<number | null>(null);
 
     function openQuickModal(state: Omit<QuickModalState, 'open'>) {
         setQuickModal({ open: true, ...state });
     }
+
+    function openPaymentDialog(reservation: Reservation, intent?: 'advance' | 'full') {
+        setPaymentDialog({ reservation, intent });
+    }
+
+    function handlePaymentSuccess(updated: Reservation) {
+        toast.success('Cobro registrado correctamente.');
+        setPaymentDialog(null);
+        router.reload({ only: ['reservations'] });
+        void updated;
+    }
+
+    // The reservation created via the quick modal redirects back here with
+    // open_payment=<id>, so the same "Cobrar venta" wizard used for sales
+    // pops up right away to collect the deposit/full payment. Adjusting
+    // state during render (rather than in an effect) is the pattern React
+    // recommends for state derived from a changed prop.
+    if (open_payment_reservation && open_payment_reservation.id !== handledPaymentId) {
+        setHandledPaymentId(open_payment_reservation.id);
+        setPaymentDialog({ reservation: open_payment_reservation, intent: open_payment_intent });
+    }
+
+    useEffect(() => {
+        if (!open_payment_reservation) {
+            return;
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.delete('open_payment');
+        url.searchParams.delete('payment_type');
+        window.history.replaceState(window.history.state, '', url.toString());
+    }, [open_payment_reservation]);
 
     useEffect(() => {
         if (flash?.success) {
@@ -226,10 +292,14 @@ toast.error(flash.error);
     }
 
     async function handleDelete(r: Reservation) {
+        const balance = Number(r.advance_amount ?? 0);
         const result = await Swal.fire({
             icon: 'warning',
             title: '¿Eliminar reservación?',
-            text: `"${r.code}" será eliminada permanentemente.`,
+            text:
+                balance > 0
+                    ? `"${r.code}" será eliminada permanentemente. El adelanto de ${money(balance)} ya cobrado en caja NO será reembolsado.`
+                    : `"${r.code}" será eliminada permanentemente.`,
             showCancelButton: true,
             confirmButtonText: 'Sí, eliminar',
             cancelButtonText: 'Cancelar',
@@ -603,6 +673,7 @@ toast.error(flash.error);
                                             onApprove={approveReservation}
                                             onReject={rejectReservation}
                                             onDelete={handleDelete}
+                                            onOpenPayment={(r) => openPaymentDialog(r, 'full')}
                                         />
                                     ))}
                                 </div>
@@ -684,6 +755,22 @@ toast.error(flash.error);
                 defaultDate={quickModal.date}
                 defaultStartTime={quickModal.startTime}
             />
+
+            {paymentDialog && (
+                <ReservationCheckoutDialog
+                    open={!!paymentDialog}
+                    reservation={paymentDialog.reservation}
+                    clients={clients}
+                    staff={staff}
+                    defaultPaymentType={paymentDialog.intent}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setPaymentDialog(null);
+                        }
+                    }}
+                    onSuccess={handlePaymentSuccess}
+                />
+            )}
         </>
     );
 }
@@ -712,17 +799,45 @@ function StatCard({
     );
 }
 
+function isReservationOverdue(reservation: Reservation): boolean {
+    const end = new Date(`${reservation.date}T${reservation.end_time.slice(0, 8)}`);
+
+    return !Number.isNaN(end.getTime()) && end.getTime() < Date.now();
+}
+
+function PendingPulse({ overdue }: { overdue: boolean }) {
+    const color = overdue ? 'bg-red-500' : 'bg-orange-500';
+    const pingColor = overdue ? 'bg-red-400' : 'bg-orange-400';
+
+    return (
+        <span className="relative flex size-2.5 shrink-0">
+            <span
+                className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${pingColor}`}
+            />
+            <span className={`relative inline-flex size-2.5 rounded-full ${color}`} />
+        </span>
+    );
+}
+
 function ReservationListItem({
     reservation,
     onApprove,
     onReject,
     onDelete,
+    onOpenPayment,
 }: {
     reservation: Reservation;
     onApprove: (reservation: Reservation) => void;
     onReject: (reservation: Reservation) => void;
     onDelete: (reservation: Reservation) => void;
+    onOpenPayment: (reservation: Reservation) => void;
 }) {
+    const total = Number(reservation.amount ?? 0);
+    const paid = Number(reservation.advance_amount ?? 0);
+    const balance = Math.max(0, total - paid);
+    const hasPendingBalance = reservation.status !== 'cancelled' && balance > 0;
+    const overdue = hasPendingBalance && isReservationOverdue(reservation);
+
     return (
         <div className="bg-slate-950/35 p-3 transition hover:bg-emerald-500/5">
             <div className="flex items-start justify-between gap-3">
@@ -745,11 +860,40 @@ function ReservationListItem({
                 </span>
             </div>
 
+            {hasPendingBalance && (
+                <button
+                    type="button"
+                    onClick={() => onOpenPayment(reservation)}
+                    className={`mt-2 flex w-full items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-xs font-bold transition ${
+                        overdue
+                            ? 'border-red-400/40 bg-red-500/10 text-red-300 hover:bg-red-500/15'
+                            : 'border-orange-400/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/15'
+                    }`}
+                >
+                    <span className="flex items-center gap-2">
+                        <PendingPulse overdue={overdue} />
+                        {overdue ? '¡Cobrar ahora!' : paid > 0 ? 'Falta completar' : 'Sin cobrar'}
+                    </span>
+                    <span>Falta {money(balance)}</span>
+                </button>
+            )}
+
             <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="font-black text-emerald-300">
                     {money(reservation.amount)}
                 </span>
                 <div className="flex items-center gap-1">
+                    {hasPendingBalance && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-orange-300 hover:bg-orange-500/10 hover:text-orange-200"
+                            title="Cobrar reserva"
+                            onClick={() => onOpenPayment(reservation)}
+                        >
+                            <CreditCard className="size-4" />
+                        </Button>
+                    )}
                     {reservation.status === 'pending' &&
                         reservation.payment_operation_number && (
                             <>
@@ -832,14 +976,40 @@ function ReservationSummary({ reservation }: { reservation: Reservation | null }
                         label="Estado"
                         value={<ReservationStatus status={reservation.status} />}
                     />
-                    <div className="flex items-center justify-between pt-4">
-                        <span className="text-base font-black text-emerald-300">
-                            Total a cobrar
-                        </span>
-                        <span className="text-2xl font-black text-emerald-300">
-                            {money(reservation.amount)}
-                        </span>
-                    </div>
+                    {(() => {
+                        const total = Number(reservation.amount ?? 0);
+                        const paid = Number(reservation.advance_amount ?? 0);
+                        const balance = Math.max(0, total - paid);
+
+                        return reservation.status !== 'cancelled' && balance > 0 ? (
+                            <>
+                                {paid > 0 && (
+                                    <SummaryRow
+                                        icon={CreditCard}
+                                        label="Pagado"
+                                        value={money(paid)}
+                                    />
+                                )}
+                                <div className="flex items-center justify-between pt-4">
+                                    <span className="text-base font-black text-orange-300">
+                                        Falta completar
+                                    </span>
+                                    <span className="text-2xl font-black text-orange-300">
+                                        {money(balance)}
+                                    </span>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex items-center justify-between pt-4">
+                                <span className="text-base font-black text-emerald-300">
+                                    Total a cobrar
+                                </span>
+                                <span className="text-2xl font-black text-emerald-300">
+                                    {money(reservation.amount)}
+                                </span>
+                            </div>
+                        );
+                    })()}
                 </div>
             ) : (
                 <p className="text-sm text-slate-500">No hay reservas para resumir.</p>
